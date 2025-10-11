@@ -1,35 +1,49 @@
 ---
 
-## ✅ 最终版：`README.md`
-
 ```markdown
-# Subtitle-Cut 🎬  
+<div align="center">
+
+# 🎬 Subtitle-Cut  
 _基于字级精确识别与对齐的 AI 自动字幕剪辑工具_  
 AI-powered subtitle cutting tool with word-level precision and Paraformer-based ASR.
 
 ---
 
+[![Python](https://img.shields.io/badge/Python-3.11-blue.svg?logo=python)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![OS](https://img.shields.io/badge/Platform-Windows-blue.svg?logo=windows)](https://github.com/foxmooner2021/subtitle-cut)
+[![GPU Support](https://img.shields.io/badge/GPU-CUDA%2011.8%20%2B%20cuDNN%208.9-orange.svg?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit-archive)
+
+---
+
+<img src="docs/preview_screenshot.png" width="640" alt="Subtitle-Cut preview screenshot" />
+<br/>
+
+</div>
+
+---
+
 ## ✨ 项目简介 | Overview
 
-**Subtitle-Cut** 是一个轻量级的本地化字幕剪辑工具，  
-可基于语音识别结果自动生成、剪切和同步视频字幕。
+**Subtitle-Cut** 是一个轻量级的本地化 AI 字幕剪辑工具，  
+可基于语音识别结果自动生成、剪切和同步视频字幕。  
 
-- 🎧 基于 **Paraformer (阿里巴巴)** 的字级精准语音识别  
-- 🧩 轻量、离线、无网络依赖  
-- 🪄 支持批量处理与可视化时间线  
-- 🧠 可扩展自定义模型与脚本接口  
+- 🎧 基于 **Paraformer (阿里巴巴)** 的字级精准 ASR  
+- 🧩 完全离线，无需联网  
+- 🪄 支持批量处理与时间线可视化  
+- 🧠 可扩展自定义模型与脚本  
 
 ---
 
 ## ⚙️ 环境配置 | Setup Instructions
 
-### 0️⃣ 解压项目 / Unpack Project
+### 0️⃣ 解压项目 / Unpack Project  
 将项目文件夹解压到任意位置，例如 `E:\subtitle-cut\`  
 Extract the project folder to any path, e.g. `E:\subtitle-cut\`
 
 ---
 
-### 1️⃣ 安装 Python 3.11 / Install Python 3.11
+### 1️⃣ 安装 Python 3.11 / Install Python 3.11  
 安装包位于 `subtitle-cut\third_party\`  
 安装时**保留 “py launcher” (默认勾选)** 或 **勾选 “Add Python to PATH”**（至少一种）
 
@@ -38,7 +52,7 @@ During setup, **keep “py launcher” checked** or **enable “Add Python to PA
 
 ---
 
-### 2️⃣ 安装 CUDA 11.8（可选） / Optional: Install CUDA 11.8 for GPU
+### 2️⃣ 安装 CUDA 11.8（可选） / Optional: Install CUDA 11.8 for GPU  
 若需 GPU 加速，请安装 **NVIDIA CUDA 11.8**：  
 🔗 [CUDA Toolkit Archive – NVIDIA Developer](https://developer.nvidia.com/cuda-toolkit-archive)
 
@@ -48,7 +62,7 @@ After installation, `torch==2.3.1+cu118` and `onnxruntime-gpu` will load correct
 
 ---
 
-### 3️⃣ 安装 cuDNN（CUDA 11.8 配套） / cuDNN for CUDA 11.8
+### 3️⃣ 安装 cuDNN（CUDA 11.8 配套） / cuDNN for CUDA 11.8  
 CUDA 11.8 对应的 cuDNN 版本为 **8.9.x (8.9.0 ~ 8.9.7)**  
 🔗 [cuDNN Archive – NVIDIA Developer](https://developer.nvidia.com/rdp/cudnn-archive)
 
@@ -65,7 +79,7 @@ After copying, PyTorch and ONNX Runtime will properly detect cuDNN.
 
 ---
 
-### 4️⃣ 下载并配置 FFmpeg / Install FFmpeg
+### 4️⃣ 下载并配置 FFmpeg / Install FFmpeg  
 下载 **FFmpeg 免安装版（zip）**：  
 🔗 [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html)
 
@@ -83,7 +97,7 @@ subtitle-cut\third_party\ffmpeg\bin
 
 ---
 
-### 5️⃣ 初始化虚拟环境 / Create Virtual Environment
+### 5️⃣ 初始化虚拟环境 / Create Virtual Environment  
 在项目目录下运行：
 ```bash
 install.bat
@@ -183,8 +197,11 @@ The source code of this project is released under the **MIT License**.
 
 ---
 
-*Developed with ❤️ by **foxmooner2021***
+<div align="center">
 
-````
+*Developed with ❤️ by **foxmooner2021*** <sub>Thank you for supporting open-source AI tools.</sub>
+
+</div>
+```
 
 ---
