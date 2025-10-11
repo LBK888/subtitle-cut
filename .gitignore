@@ -1,12 +1,21 @@
+# venv & cache
 .venv/
+__pycache__/
+*.py[cod]
+*.log
+
+# data/media/runtime
+data/**
+
+# ignore all third_party content but keep license notice
+third_party/**
+!third_party/LICENSES.md
+
+# models (大文件/自动下载)
 models/
 
-__pycache__/
-*.pyc
-*.pyo
-*.log
+# OS / editors
 .DS_Store
-
-data/*.mp4
-data/*.mov
-data/*.db
+Thumbs.db
+.vscode/
+.idea/
