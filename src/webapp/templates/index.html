@@ -1,0 +1,228 @@
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8"/>
+<title>Subtitle Cut</title>
+<link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet"/>
+</head>
+<body>
+<div class="app-shell">
+<aside class="app-sidebar">
+<div class="sidebar-branding">
+<span class="product-name">Subtitle Cut</span>
+</div>
+<div class="sidebar-section sidebar-file-controls">
+<div class="sidebar-buttons">
+<button class="ghost-button sidebar-button" id="file-open" type="button">打开工程文件</button>
+<button class="ghost-button sidebar-button" id="file-save" type="button">保存工程文件</button>
+<button class="ghost-button sidebar-button" id="file-save-as" type="button">另存工程文件</button>
+<button class="ghost-button sidebar-button" id="file-close" type="button">关闭工程文件</button>
+</div>
+</div>
+<section class="operation-strip sidebar-section">
+<form class="operation-strip__group" id="upload-form">
+<label class="operation-strip__file">
+<input accept="audio/*,video/*" id="media-file" required="" type="file"/>
+<span>导入音视频</span>
+</label>
+<label class="operation-strip__field operation-strip__field--compact">
+<span>识别引擎</span>
+<select id="engine-select">
+<!-- // BEGIN-EDIT -->
+<option selected="" value="paraformer">Paraformer</option>
+<!-- // END-EDIT -->
+</select>
+</label>
+<label class="operation-strip__field operation-strip__field--compact">
+<span>模型</span>
+<select id="model-select">
+<!-- // BEGIN-EDIT -->
+<option selected="" value="paraformer-zh">paraformer-zh</option>
+<option value="paraformer-en">paraformer-en</option>
+<!-- // END-EDIT -->
+</select>
+</label>
+<label class="operation-strip__field operation-strip__field--compact">
+<span>运行设备</span>
+<select id="device-select">
+<option value="auto">自动</option>
+<option selected="" value="cuda">CUDA</option>
+<option value="cpu">CPU</option>
+</select>
+</label>
+<button class="primary-button operation-strip__primary operation-strip__primary--wide" type="submit">转写</button>
+<div class="operation-strip__status operation-strip__status--fixed">
+<span class="task-status" id="task-status"></span>
+</div>
+</form>
+<form class="operation-strip__group" id="cut-form">
+<div class="operation-strip__actions operation-strip__checks--horizontal">
+<button class="ghost-button sidebar-button" id="export-srt-button" type="button">导出 SRT</button>
+</div>
+<label class="operation-strip__field operation-strip__field--narrow">
+<span>输出文件名</span>
+<input id="cut-output-name" placeholder="可选，默认使用 project_id" type="text"/>
+</label>
+<button class="primary-button operation-strip__primary operation-strip__primary--wide" type="submit">生成剪辑</button>
+<div class="operation-strip__status operation-strip__status--fixed">
+<span class="task-status" id="cut-status"></span>
+</div>
+<button class="ghost-button sidebar-button operation-strip__secondary" id="menu-open-options" type="button">编码设置</button>
+</form>
+</section>
+</aside>
+<div class="app-main">
+<main class="workspace-layout" id="workspace">
+<section class="preview-column">
+<div class="panel preview-panel">
+<header class="panel-header">
+<h3>视频预览</h3>
+<div class="panel-meta">
+<button class="ghost-button" id="preview-fit" type="button">适应窗口</button>
+<button class="ghost-button" id="preview-original" type="button">原始比例</button>
+</div>
+</header>
+<video class="media-player" controls="" id="media-player" preload="metadata"></video>
+</div>
+</section>
+<section class="manuscript-column">
+<div class="panel transcript-panel">
+<header class="panel-header manuscript-header">
+<h3>文稿编辑</h3>
+<div class="manuscript-actions">
+<button class="ghost-button action-compact" id="manuscript-delete-silence" type="button">一键删除无声片段</button>
+<div class="manuscript-filler-group">
+<button class="ghost-button action-compact" id="manuscript-delete-filler" type="button">一键去除水词</button>
+<input class="manuscript-filler-input" id="filler-words" placeholder="例如：呃 呀 就是" type="text"/>
+<button class="ghost-button icon-button" id="filler-settings" title="常用水词设置" type="button">设置</button></div>
+</div>
+</header>
+<div class="segments-container" id="segments" tabindex="0"></div>
+<div class="manuscript-footer">
+<div class="manuscript-footer-inner"><div class="manuscript-footer-left">
+<div class="manuscript-search search-box">
+<input id="transcript-search" placeholder="输入查找内容" type="text"/>
+<div class="search-actions" id="search-actions">
+<button class="ghost-button" id="search-delete-one" type="button">删除</button>
+<button class="ghost-button" id="search-delete-all" type="button">删除全部</button>
+</div>
+</div>
+</div><label class="toggle-deleted" for="toggle-show-deleted">
+<input id="toggle-show-deleted" type="checkbox"/>
+                显示删除内容
+              </label></div></div>
+</div>
+</section>
+</main>
+<section class="timeline-row">
+<div class="panel timeline-panel">
+<header class="panel-header">
+<h3>时间轴</h3>
+<div class="panel-meta">
+<button class="ghost-button" id="timeline-zoom-out" type="button">缩小</button>
+<button class="ghost-button" id="timeline-zoom-in" type="button">放大</button>
+<button class="ghost-button" id="timeline-fit" type="button">自适应</button>
+</div>
+</header>
+<div class="timeline-canvas" id="timeline-track"></div>
+</div>
+</section>
+</div>
+</div>
+<div aria-hidden="true" aria-modal="true" class="log-drawer" id="log-drawer" role="dialog">
+<div class="log-drawer__header">
+<span>活动日志</span>
+<button class="ghost-button" id="log-close" type="button">关闭</button>
+</div>
+<div class="log" id="activity-log"></div>
+</div>
+<div aria-hidden="true" class="options-backdrop" id="options-backdrop"></div>
+<div aria-hidden="true" aria-modal="true" class="options-panel" id="options-panel" role="dialog">
+<div class="options-panel__header">
+<span>选项设置</span>
+<button class="ghost-button" id="options-close" type="button">关闭</button>
+</div>
+<div class="options-panel__body">
+<form id="options-form">
+<label class="options-field">
+<span>重新编码策略</span>
+<select id="cut-reencode">
+<option value="auto">自动选择</option>
+<option value="copy">直接拷贝</option>
+<option selected="" value="nvenc">NVIDIA NVENC</option>
+<option value="reencode">强制重新编码</option>
+</select>
+</label>
+<label class="options-field">
+<span>零交叉吸附</span>
+<select id="cut-snap-zero">
+<option selected="" value="true">启用</option>
+<option value="false">禁用</option>
+</select>
+</label>
+<label class="options-field">
+<span>音频交叉淡化 (ms)</span>
+<input id="cut-xfade-ms" min="0" step="10" type="number" value="0"/>
+</label>
+<label class="options-field">
+<span>剪辑批次大小</span>
+<input id="cut-chunk-size" min="1" step="1" type="number" value="20"/>
+</label>
+</form>
+</div>
+</div>
+<div aria-hidden="true" class="snapshot-backdrop" id="snapshot-backdrop"></div>
+<div aria-hidden="true" aria-modal="true" class="snapshot-panel" id="snapshot-panel" role="dialog">
+<div class="snapshot-panel__header">
+<span>版本管理</span>
+<button class="ghost-button" id="snapshot-close" type="button">关闭</button>
+</div>
+<div class="snapshot-panel__body">
+<div class="snapshot-panel__actions">
+<button class="primary-button" id="snapshot-create" type="button">另存为版本</button>
+</div>
+<p class="snapshot-empty hidden" id="snapshot-empty">还没有保存的版本，点击“另存为版本”开始管理。</p>
+<ul class="snapshot-list" id="snapshot-list"></ul>
+</div>
+</div>
+<div aria-hidden="true" class="file-open-backdrop" id="file-open-backdrop"></div>
+<div aria-hidden="true" aria-modal="true" class="file-open-panel" id="file-open-panel" role="dialog">
+<div class="file-open-panel__header">
+<span>打开工程文件</span>
+<button class="ghost-button" id="file-open-close" type="button">关闭</button>
+</div>
+<div class="file-open-panel__body">
+<div class="file-open-columns">
+<section class="file-open-section">
+<header class="file-open-section__header">
+<span>项目</span>
+<button class="ghost-button" id="file-open-refresh" type="button">刷新</button>
+</header>
+<ul class="open-project-list" id="open-project-list"></ul>
+</section>
+<section class="file-open-section">
+<header class="file-open-section__header">
+<span>工程文件</span>
+<span class="file-open-section__meta" id="open-project-active-name"></span>
+</header>
+<ul class="open-project-file-list" id="open-project-file-list"></ul>
+</section>
+</div>
+</div>
+</div>
+<div aria-hidden="true" class="common-fillers-backdrop" id="common-fillers-backdrop"></div>
+<div aria-hidden="true" aria-modal="true" class="common-fillers-panel" id="common-fillers-panel" role="dialog">
+<div class="common-fillers-panel__header">
+<span>常用水词列表</span>
+<button class="ghost-button" id="common-fillers-close" type="button">关闭</button>
+</div>
+<div class="common-fillers-panel__body">
+<p class="panel-hint">使用空格、顿号或换行分隔多个水词，保存后将在所有文稿中复用。</p>
+<textarea id="common-fillers-input" placeholder="例如：呃 呀 就是 其实" rows="6"></textarea>
+</div>
+<div class="common-fillers-panel__footer">
+<button class="primary-button" id="common-fillers-save" type="button">保存</button>
+</div>
+</div>
+<script src="{{ url_for('static', filename='app.js') }}" type="module"></script>
+</body>
+</html>
