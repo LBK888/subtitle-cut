@@ -158,11 +158,9 @@ run_webapp.bat
 
 ```
 subtitle-cut/
-├─ data/                # 示例数据 / 运行时缓存
 ├─ models/              # 离线模型目录
 ├─ src/                 # 核心源代码
 ├─ third_party/         # 第三方依赖路径占位（不含二进制）
-│   └─ ffmpeg/bin/
 ├─ install.bat
 ├─ run_webapp.bat
 ├─ requirements.txt
