@@ -1,0 +1,25 @@
+name: ci
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          python - <<'PY'
+          import importlib
+          for m in ["os", "sys", "pathlib"]:
+              importlib.import_module(m)
+          print("✅ Environment OK")
+          PY
