@@ -1,11 +1,8 @@
----
-
-```markdown
 <div align="center">
 
 # 🎬 Subtitle-Cut  
-_基于字级精确识别与对齐的 AI 自动字幕剪辑工具_  
-AI-powered subtitle cutting tool with word-level precision and Paraformer-based ASR.
+_基于字符级精确识别与对齐的 AI 自动字幕剪辑工具_  
+AI-powered subtitle cutting tool with **character-level precision** and Paraformer-based ASR.
 
 ---
 
@@ -202,6 +199,3 @@ The source code of this project is released under the **MIT License**.
 *Developed with ❤️ by **foxmooner2021*** <sub>Thank you for supporting open-source AI tools.</sub>
 
 </div>
-```
-
----
