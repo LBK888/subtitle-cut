@@ -25,7 +25,7 @@ AI-powered subtitle cutting tool with **character-level precision** and Paraform
 **Subtitle-Cut** 是一个轻量级的本地化 AI 字幕剪辑工具，  
 可基于语音识别结果自动生成、剪切和同步视频字幕。  
 
-- 🎧 基于 **Paraformer (阿里巴巴)** 的字级精准 ASR  
+- 🎧 基于 **Paraformer (阿里巴巴)** 的字符级精准 ASR  
 - 🧩 完全离线，无需联网  
 - 🪄 支持批量处理与时间线可视化  
 - 🧠 可扩展自定义模型与脚本  
