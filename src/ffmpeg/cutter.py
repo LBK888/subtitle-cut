@@ -6,6 +6,7 @@ import logging
 import subprocess
 import io
 import os
+import re
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -28,6 +29,42 @@ class FilterPlan:
     script_path: Path
     modes: List[str]
     expected_duration: float
+    has_video: bool
+    has_audio: bool
+
+
+_STREAM_KIND_RE = re.compile(r"Stream #\d+:\d+(?:\[[^\]]*\])?:\s*(Video|Audio)\b", re.IGNORECASE)
+
+_AUDIO_OUTPUT_PROFILES: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
+    ".mp3": ("mp3", ("-c:a", "libmp3lame", "-b:a", "192k"), ()),
+    ".wav": ("wav", ("-c:a", "pcm_s16le"), ()),
+    ".flac": ("flac", ("-c:a", "flac"), ()),
+    ".ogg": ("ogg", ("-c:a", "libvorbis", "-q:a", "5"), ()),
+    ".aac": ("adts", ("-c:a", "aac", "-b:a", "192k"), ()),
+    ".m4a": ("mp4", ("-c:a", "aac", "-b:a", "192k"), ("-movflags", "+faststart")),
+}
+
+_DEFAULT_AUDIO_PROFILE = ".mp3"
+
+
+def probe_media_streams(input_path: PathLike, ffmpeg_binary: str) -> tuple[bool, bool]:
+    command = [ffmpeg_binary, "-hide_banner", "-i", str(input_path)]
+    result = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    output = b""
+    if result.stderr:
+        output += result.stderr
+    if result.stdout:
+        output += result.stdout
+    text = output.decode("utf-8", errors="ignore")
+    matches = _STREAM_KIND_RE.findall(text)
+    has_video = any(kind.lower() == "video" for kind in matches)
+    has_audio = any(kind.lower() == "audio" for kind in matches)
+    return has_video, has_audio
 
 
 def _create_filter_plan(
@@ -35,6 +72,8 @@ def _create_filter_plan(
     *,
     reencode: str,
     xfade_ms: float,
+    has_video: bool,
+    has_audio: bool,
 ) -> FilterPlan:
     filter_parts: List[str] = []
     segment_durations: List[float] = []
@@ -67,68 +106,107 @@ def _create_filter_plan(
         segment_duration = segment_end - segment_start
         segment_durations.append(segment_duration)
 
-        filter_parts.append(
-            f"[0:v]trim=start={segment_start:.6f}:end={segment_end:.6f},setpts=PTS-STARTPTS[v{idx}]"
-        )
-        filter_parts.append(
-            f"[0:a]atrim=start={segment_start:.6f}:end={segment_end:.6f},asetpts=PTS-STARTPTS[a{idx}]"
-        )
-        video_labels.append(f"v{idx}")
-        audio_labels.append(f"a{idx}")
+        if has_video:
+            filter_parts.append(
+                f"[0:v]trim=start={segment_start:.6f}:end={segment_end:.6f},setpts=PTS-STARTPTS[v{idx}]"
+            )
+            video_labels.append(f"v{idx}")
+        if has_audio:
+            filter_parts.append(
+                f"[0:a]atrim=start={segment_start:.6f}:end={segment_end:.6f},asetpts=PTS-STARTPTS[a{idx}]"
+            )
+            audio_labels.append(f"a{idx}")
 
-    if not video_labels or not audio_labels:
-        raise ValueError("未生成有效的音视频片段")
+    video_enabled = has_video and bool(video_labels)
+    audio_enabled = has_audio and bool(audio_labels)
+
+    if has_video and not video_enabled:
+        raise ValueError("未生成有效的视频片段")
+    if has_audio and not audio_enabled:
+        raise ValueError("未生成有效的音频片段")
+    if not video_enabled and not audio_enabled:
+        raise ValueError("未生成有效的剪辑片段")
 
     xfade_seconds = max(xfade_ms, 0.0) / 1000.0
-    use_crossfade = len(video_labels) > 1 and xfade_seconds > 0.0
-    if use_crossfade:
+    use_audio_crossfade = audio_enabled and len(audio_labels) > 1 and xfade_seconds > 0.0
+    use_video_crossfade = video_enabled and len(video_labels) > 1 and xfade_seconds > 0.0
+    if use_audio_crossfade or use_video_crossfade:
         pair_limits = [
             min(segment_durations[i - 1], segment_durations[i])
             for i in range(1, len(segment_durations))
         ]
         max_allowed = max(min(pair_limits) - 1e-3, 0.0) if pair_limits else 0.0
         if max_allowed <= 0.0:
-            use_crossfade = False
+            use_audio_crossfade = False
+            use_video_crossfade = False
         else:
             xfade_seconds = min(xfade_seconds, max_allowed)
 
     raw_duration = float(sum(segment_durations))
-    overlap = xfade_seconds * (len(segment_durations) - 1) if use_crossfade else 0.0
+    overlap = xfade_seconds * (len(segment_durations) - 1) if (use_audio_crossfade or use_video_crossfade) else 0.0
     expected_duration = max(0.0, raw_duration - overlap)
     if expected_duration <= 0.0 and raw_duration > 0.0:
         expected_duration = raw_duration
 
-    if use_crossfade:
-        audio_prev = audio_labels[0]
-        for idx in range(1, len(audio_labels)):
-            current = audio_labels[idx]
-            out_label = f"af_{idx}"
-            filter_parts.append(
-                f"[{audio_prev}][{current}]acrossfade=d={xfade_seconds:.6f}:curve1=tri:curve2=tri[{out_label}]"
-            )
-            audio_prev = out_label
+    if video_enabled:
+        if use_video_crossfade:
+            if audio_enabled:
+                audio_prev = audio_labels[0]
+                for idx in range(1, len(audio_labels)):
+                    current = audio_labels[idx]
+                    out_label = f"af_{idx}"
+                    filter_parts.append(
+                        f"[{audio_prev}][{current}]acrossfade=d={xfade_seconds:.6f}:curve1=tri:curve2=tri[{out_label}]"
+                    )
+                    audio_prev = out_label
 
-        video_prev = video_labels[0]
-        accumulated = segment_durations[0]
-        for idx in range(1, len(video_labels)):
-            current = video_labels[idx]
-            out_label = f"vf_{idx}"
-            offset = max(accumulated - xfade_seconds, 0.0)
-            filter_parts.append(
-                f"[{video_prev}][{current}]xfade=transition=fade:duration={xfade_seconds:.6f}:offset={offset:.6f}[{out_label}]"
-            )
-            video_prev = out_label
-            accumulated = accumulated + segment_durations[idx] - xfade_seconds
+            video_prev = video_labels[0]
+            accumulated = segment_durations[0]
+            for idx in range(1, len(video_labels)):
+                current = video_labels[idx]
+                out_label = f"vf_{idx}"
+                offset = max(accumulated - xfade_seconds, 0.0)
+                filter_parts.append(
+                    f"[{video_prev}][{current}]xfade=transition=fade:duration={xfade_seconds:.6f}:offset={offset:.6f}[{out_label}]"
+                )
+                video_prev = out_label
+                accumulated = accumulated + segment_durations[idx] - xfade_seconds
 
-        filter_parts.append(f"[{video_prev}]format=yuv420p[vout]")
-        filter_parts.append(f"[{audio_prev}]anull[aout]")
-    else:
-        concat_inputs = "".join(
-            f"[{video_labels[idx]}][{audio_labels[idx]}]" for idx in range(len(video_labels))
-        )
-        filter_parts.append(
-            f"{concat_inputs}concat=n={len(video_labels)}:v=1:a=1[vout][aout]"
-        )
+            filter_parts.append(f"[{video_prev}]format=yuv420p[vout]")
+            if audio_enabled:
+                filter_parts.append(f"[{audio_prev}]anull[aout]")
+        else:
+            if audio_enabled:
+                concat_inputs = "".join(
+                    f"[{video_labels[idx]}][{audio_labels[idx]}]" for idx in range(len(video_labels))
+                )
+                filter_parts.append(
+                    f"{concat_inputs}concat=n={len(video_labels)}:v=1:a=1[vout][aout]"
+                )
+            else:
+                concat_inputs = "".join(f"[{video_labels[idx]}]" for idx in range(len(video_labels)))
+                filter_parts.append(
+                    f"{concat_inputs}concat=n={len(video_labels)}:v=1:a=0[vout]"
+                )
+    elif audio_enabled:
+        if use_audio_crossfade:
+            audio_prev = audio_labels[0]
+            for idx in range(1, len(audio_labels)):
+                current = audio_labels[idx]
+                out_label = f"af_{idx}"
+                filter_parts.append(
+                    f"[{audio_prev}][{current}]acrossfade=d={xfade_seconds:.6f}:curve1=tri:curve2=tri[{out_label}]"
+                )
+                audio_prev = out_label
+            filter_parts.append(f"[{audio_prev}]anull[aout]")
+        else:
+            if len(audio_labels) == 1:
+                filter_parts.append(f"[{audio_labels[0]}]anull[aout]")
+            else:
+                concat_inputs = "".join(f"[{label}]" for label in audio_labels)
+                filter_parts.append(
+                    f"{concat_inputs}concat=n={len(audio_labels)}:v=0:a=1[aout]"
+                )
 
     filter_complex = ";\n".join(filter_parts)
     script_path = _create_filter_script(filter_complex)
@@ -139,11 +217,20 @@ def _create_filter_plan(
     if codec == "copy":
         codec = "auto"
 
-    modes = [codec]
-    if codec == "nvenc":
-        modes.append("auto")
+    if video_enabled:
+        modes = [codec]
+        if codec == "nvenc":
+            modes.append("auto")
+    else:
+        modes = ["audio"]
 
-    return FilterPlan(script_path=script_path, modes=modes, expected_duration=expected_duration)
+    return FilterPlan(
+        script_path=script_path,
+        modes=modes,
+        expected_duration=expected_duration,
+        has_video=video_enabled,
+        has_audio=audio_enabled,
+    )
 
 
 def _build_encoder_command(
@@ -159,29 +246,38 @@ def _build_encoder_command(
         str(input_path),
         "-filter_complex_script",
         str(plan.script_path),
-        "-map",
-        "[vout]",
-        "-map",
-        "[aout]",
     ]
-    if codec_mode == "nvenc":
-        cmd.extend(
-            [
-                "-c:v",
-                "h264_nvenc",
-                "-preset",
-                "p4",
-                "-rc",
-                "vbr",
-                "-cq",
-                "19",
-                "-b:v",
-                "0",
-            ]
-        )
-        cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+
+    if plan.has_video:
+        cmd.extend(["-map", "[vout]"])
     else:
-        cmd.extend(["-c:v", "libx264", "-preset", "medium", "-crf", "18"])
+        cmd.append("-vn")
+
+    if plan.has_audio:
+        cmd.extend(["-map", "[aout]"])
+    else:
+        cmd.append("-an")
+
+    if plan.has_video:
+        if codec_mode == "nvenc":
+            cmd.extend(
+                [
+                    "-c:v",
+                    "h264_nvenc",
+                    "-preset",
+                    "p4",
+                    "-rc",
+                    "vbr",
+                    "-cq",
+                    "19",
+                    "-b:v",
+                    "0",
+                ]
+            )
+        else:
+            cmd.extend(["-c:v", "libx264", "-preset", "medium", "-crf", "18"])
+
+    if plan.has_audio:
         cmd.extend(["-c:a", "aac", "-b:a", "192k"])
 
     if container == "mp4":
@@ -245,10 +341,14 @@ def _execute_chunked_cut(
     total_duration: float,
     ffmpeg_binary: str,
     xfade_ms: float,
+    has_video: bool,
+    has_audio: bool,
     progress_callback: Callable[[float], None] | None,
     progress_start: float,
     progress_span: float,
 ) -> None:
+    if not has_video:
+        raise ValueError("chunked execution requires video stream")
     if chunk_size < 2:
         raise ValueError("chunk_size must be at least 2 for chunked execution")
     if total_duration <= 0.0:
@@ -338,6 +438,8 @@ def _execute_chunked_cut(
             ranges,  # type: ignore[arg-type]
             reencode=codec,
             xfade_ms=xfade_ms,
+            has_video=has_video,
+            has_audio=has_audio,
         )
         try:
             progress_duration = plan.expected_duration if plan.expected_duration > 0.0 else duration
@@ -480,8 +582,23 @@ def cut_video(
             if chunk_size_value < 2:
                 chunk_size_value = 0
 
+    output_path_obj = Path(output_path)
+    output_suffix = output_path_obj.suffix.lower()
+
+    has_video, has_audio = probe_media_streams(input_path, ffmpeg_binary)
+    if not has_video and not has_audio:
+        raise ValueError("未检测到可用的音频或视频轨道")
+
+    audio_profile = None
+    if not has_video and has_audio:
+        audio_profile = _AUDIO_OUTPUT_PROFILES.get(output_suffix)
+        if audio_profile is None:
+            audio_profile = _AUDIO_OUTPUT_PROFILES[_DEFAULT_AUDIO_PROFILE]
+            LOGGER.warning("unknown audio extension %s, defaulting to mp3 encoding", output_suffix)
+
     use_chunk = (
-        chunk_size_value >= 2
+        has_video
+        and chunk_size_value >= 2
         and len(keep_list) > chunk_size_value
         and xfade_ms <= 0.0
     )
@@ -496,6 +613,8 @@ def cut_video(
             total_duration=total_keep_duration,
             ffmpeg_binary=ffmpeg_binary,
             xfade_ms=xfade_ms,
+            has_video=has_video,
+            has_audio=has_audio,
             progress_callback=progress_callback,
             progress_start=0.25,
             progress_span=0.65,
@@ -504,167 +623,70 @@ def cut_video(
         _emit_progress(1.0)
         return
 
-    filter_parts: List[str] = []
-    segment_durations: List[float] = []
-    video_labels: List[str] = []
-    audio_labels: List[str] = []
-
-    trim_margin = 0.008
-    total_segments = len(keep_list)
-
-    for idx, (start, end) in enumerate(keep_list):
-        segment_start = float(start)
-        segment_end = float(end)
-        segment_length = max(0.0, segment_end - segment_start)
-
-        if total_segments > 1 and segment_length > 0.0:
-            if idx > 0:
-                prev_end = keep_list[idx - 1][1]
-                gap = segment_start - prev_end
-                adjust = min(trim_margin, max(gap / 2, 0.0), segment_length / 4)
-                segment_start = min(segment_end, segment_start + adjust)
-            if idx < total_segments - 1:
-                next_start = keep_list[idx + 1][0]
-                gap = next_start - segment_end
-                adjust = min(trim_margin, max(gap / 2, 0.0), (segment_end - segment_start) / 4)
-                segment_end = max(segment_start, segment_end - adjust)
-
-        if segment_end <= segment_start:
-            continue
-
-        segment_duration = segment_end - segment_start
-        segment_durations.append(segment_duration)
-
-        filter_parts.append(
-            f"[0:v]trim=start={segment_start:.6f}:end={segment_end:.6f},setpts=PTS-STARTPTS[v{idx}]"
-        )
-        filter_parts.append(
-            f"[0:a]atrim=start={segment_start:.6f}:end={segment_end:.6f},asetpts=PTS-STARTPTS[a{idx}]"
-        )
-        video_labels.append(f"v{idx}")
-        audio_labels.append(f"a{idx}")
-
-    if not video_labels or not audio_labels:
-        raise ValueError("未生成有效的音视频片段")
     _emit_progress(0.2)
 
-    xfade_seconds = max(xfade_ms, 0.0) / 1000.0
-    use_crossfade = len(video_labels) > 1 and xfade_seconds > 0.0
-    if use_crossfade:
-        pair_limits = [
-            min(segment_durations[i - 1], segment_durations[i])
-            for i in range(1, len(segment_durations))
-        ]
-        max_allowed = max(min(pair_limits) - 1e-3, 0.0) if pair_limits else 0.0
-        if max_allowed <= 0.0:
-            use_crossfade = False
-        else:
-            xfade_seconds = min(xfade_seconds, max_allowed)
+    plan = _create_filter_plan(
+        keep_list,
+        reencode=codec,
+        xfade_ms=xfade_ms,
+        has_video=has_video,
+        has_audio=has_audio,
+    )
 
-    raw_duration = float(sum(segment_durations))
-    overlap = xfade_seconds * (len(segment_durations) - 1) if use_crossfade else 0.0
-    expected_duration = max(0.0, raw_duration - overlap)
-    if expected_duration <= 0.0 and raw_duration > 0.0:
-        expected_duration = raw_duration
     _emit_progress(0.25)
 
-    if use_crossfade:
-        audio_prev = audio_labels[0]
-        for idx in range(1, len(audio_labels)):
-            current = audio_labels[idx]
-            out_label = f"af_{idx}"
-            filter_parts.append(
-                f"[{audio_prev}][{current}]acrossfade=d={xfade_seconds:.6f}:curve1=tri:curve2=tri[{out_label}]"
-            )
-            audio_prev = out_label
+    last_error: subprocess.CalledProcessError | None = None
+    ffmpeg_start = 0.25
+    ffmpeg_span = 0.65
 
-        video_prev = video_labels[0]
-        accumulated = segment_durations[0]
-        for idx in range(1, len(video_labels)):
-            current = video_labels[idx]
-            out_label = f"vf_{idx}"
-            offset = max(accumulated - xfade_seconds, 0.0)
-            filter_parts.append(
-                f"[{video_prev}][{current}]xfade=transition=fade:duration={xfade_seconds:.6f}:offset={offset:.6f}[{out_label}]"
-            )
-            video_prev = out_label
-            accumulated = accumulated + segment_durations[idx] - xfade_seconds
-
-        filter_parts.append(f"[{video_prev}]format=yuv420p[vout]")
-        filter_parts.append(f"[{audio_prev}]anull[aout]")
-    else:
-        concat_inputs = "".join(
-            f"[{video_labels[idx]}][{audio_labels[idx]}]" for idx in range(len(video_labels))
-        )
-        filter_parts.append(
-            f"{concat_inputs}concat=n={len(video_labels)}:v=1:a=1[vout][aout]"
-        )
-
-    filter_complex = ";\n".join(filter_parts)
-    filter_script_path: Path | None = None
+    def _on_ffmpeg_progress(value: float) -> None:
+        clamped = max(0.0, min(1.0, value))
+        _emit_progress(ffmpeg_start + ffmpeg_span * clamped)
 
     try:
-        filter_script_path = _create_filter_script(filter_complex)
-
-        def build_command(codec_mode: str) -> List[str]:
-            cmd: List[str] = [
-                "-i",
-                str(input_path),
-                "-filter_complex_script",
-                str(filter_script_path),
-                "-map",
-                "[vout]",
-                "-map",
-                "[aout]",
-            ]
-            if codec_mode == "nvenc":
-                cmd.extend(
-                    [
-                        "-c:v",
-                        "h264_nvenc",
-                        "-preset",
-                        "p4",
-                        "-rc",
-                        "vbr",
-                        "-cq",
-                        "19",
-                        "-b:v",
-                        "0",
-                    ]
+        for mode in plan.modes:
+            if plan.has_video:
+                command = _build_encoder_command(
+                    input_path,
+                    plan,
+                    mode,
+                    container="mp4",
+                    output_target=str(output_path_obj),
                 )
-                cmd.extend(["-c:a", "aac", "-b:a", "192k"])
-            elif codec_mode in {"auto", "reencode"}:
-                cmd.extend(["-c:v", "libx264", "-preset", "medium", "-crf", "18"])
-                cmd.extend(["-c:a", "aac", "-b:a", "192k"])
-            cmd.extend(["-movflags", "+faststart", str(output_path)])
-            return cmd
-
-        modes = [codec]
-        if codec == "nvenc":
-            modes.append("auto")
-
-        last_error: subprocess.CalledProcessError | None = None
-        ffmpeg_start = 0.25
-        ffmpeg_span = 0.65
-
-        def _on_ffmpeg_progress(value: float) -> None:
-            clamped = max(0.0, min(1.0, value))
-            _emit_progress(ffmpeg_start + ffmpeg_span * clamped)
-
-        for mode in modes:
-            command = build_command(mode)
+            else:
+                container, codec_args, post_args = audio_profile
+                command = [
+                    "-i",
+                    str(input_path),
+                    "-filter_complex_script",
+                    str(plan.script_path),
+                    "-map",
+                    "[aout]",
+                ]
+                if container:
+                    command.extend(["-f", container])
+                command.extend(codec_args)
+                if post_args:
+                    command.extend(post_args)
+                command.append(str(output_path_obj))
             try:
                 run_ffmpeg(
                     command,
                     binary=ffmpeg_binary,
                     progress_callback=_on_ffmpeg_progress,
-                    progress_duration=expected_duration if expected_duration > 0.0 else None,
+                    progress_duration=plan.expected_duration if plan.expected_duration > 0.0 else None,
                 )
                 last_error = None
                 break
             except subprocess.CalledProcessError as error:
                 last_error = error
-                if codec == "nvenc" and mode == "nvenc":
+                if (
+                    plan.has_video
+                    and plan.modes
+                    and plan.modes[0] == "nvenc"
+                    and mode == "nvenc"
+                    and len(plan.modes) > 1
+                ):
                     LOGGER.warning("NVENC encoding failed, falling back to libx264: %s", error)
                     continue
                 raise
@@ -672,11 +694,10 @@ def cut_video(
             raise last_error
         _emit_progress(0.92)
     finally:
-        if filter_script_path is not None:
-            try:
-                filter_script_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+        try:
+            plan.script_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     _emit_progress(1.0)
 

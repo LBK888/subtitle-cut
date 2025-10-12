@@ -270,6 +270,7 @@ function cacheDom() {
   dom.fillerSettings = document.querySelector("#filler-settings");
   dom.searchInput = document.querySelector("#transcript-search");
   dom.searchActions = document.querySelector("#search-actions");
+  dom.searchSkip = document.querySelector("#search-skip");
   dom.searchDeleteOne = document.querySelector("#search-delete-one");
   dom.searchDeleteAll = document.querySelector("#search-delete-all");
   dom.menuEditCommonFillers = document.querySelector("#menu-edit-common-fillers");
@@ -424,6 +425,9 @@ function bindEvents() {
     dom.searchDeleteOne.addEventListener("click", () => deleteSearchMatches(false));
     dom.searchDeleteOne.addEventListener("mouseenter", () => highlightSearchPreview(true, false));
     dom.searchDeleteOne.addEventListener("mouseleave", () => highlightSearchPreview(false));
+  }
+  if (dom.searchSkip) {
+    dom.searchSkip.addEventListener("click", handleSearchSkip);
   }
   if (dom.searchDeleteAll) {
     dom.searchDeleteAll.addEventListener("click", () => deleteSearchMatches(true));
@@ -2738,7 +2742,13 @@ function updateSearchHighlights() {
 }
 
 function deleteSearchMatches(deleteAll) {
-  const sequences = deleteAll ? state.searchMatches.slice() : state.searchMatches.slice(0, 1);
+  if (!state.searchMatches.length) return;
+  const targetIndex = Math.min(state.searchPointer, state.searchMatches.length - 1);
+  const sequences = deleteAll
+    ? state.searchMatches.slice()
+    : state.searchMatches[targetIndex]
+      ? [state.searchMatches[targetIndex]]
+      : [];
   if (!sequences.length) return;
   const keysToDelete = new Set();
   sequences.forEach((sequence) => {
@@ -2746,6 +2756,17 @@ function deleteSearchMatches(deleteAll) {
   });
   deleteTokens(Array.from(keysToDelete), { reason: "search" });
   performSearch(state.searchQuery);
+}
+
+function handleSearchSkip() {
+  if (!state.searchMatches.length) {
+    return;
+  }
+  clearSearchPreviewHighlight();
+  moveSearchPointer(1);
+  if (dom.searchActions) {
+    dom.searchActions.classList.add("visible");
+  }
 }
 
 function handleSearchKeydown(event) {
@@ -2782,7 +2803,13 @@ function clearSearchPreviewHighlight() {
 function highlightSearchPreview(active, highlightAll = false) {
   clearSearchPreviewHighlight();
   if (!active) return;
-  const sequences = highlightAll ? state.searchMatches : state.searchMatches.slice(0, 1);
+  if (!state.searchMatches.length) return;
+  const targetIndex = Math.min(state.searchPointer, state.searchMatches.length - 1);
+  const sequences = highlightAll
+    ? state.searchMatches
+    : state.searchMatches[targetIndex]
+      ? [state.searchMatches[targetIndex]]
+      : [];
   if (!sequences.length) return;
   sequences.forEach((sequence) => {
     sequence.forEach((key) => {

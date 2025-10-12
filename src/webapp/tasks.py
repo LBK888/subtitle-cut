@@ -20,11 +20,13 @@ from typing import Any, Dict, Iterator, Optional, Set
 from ..asr.transcribe import transcribe_to_json
 from ..core.schema import Transcript
 from ..core.transform import TimeRange, rebase_transcript_after_cuts
-from ..ffmpeg.cutter import cut_video
+from ..ffmpeg.cutter import cut_video, probe_media_streams
 from ..webapp.storage import ProjectStorage
 
 
 LOGGER = logging.getLogger(__name__)
+
+AUDIO_OUTPUT_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac"}
 
 
 def _merge_time_ranges(ranges: list[TimeRange]) -> list[TimeRange]:
@@ -437,13 +439,28 @@ class TaskManager:
         chunk_size: int,
     ) -> None:
         state.status = "running"
-        state.message = "正在剪辑视频"
+        state.message = "正在准备剪辑"
         state.progress = 0.1
 
         try:
             output_stem = self.resolve_export_stem(base_name, project_id)
             state.metadata["output_stem"] = output_stem
-            output_video = self.exports_dir / f"{output_stem}.mp4"
+
+            try:
+                has_video, has_audio = probe_media_streams(input_path, "ffmpeg")
+            except Exception:
+                has_video = True
+                has_audio = True
+            state.metadata["has_video"] = has_video
+            state.metadata["has_audio"] = has_audio
+
+            input_suffix = input_path.suffix.lower()
+            if not has_video and has_audio:
+                chosen_ext = input_suffix if input_suffix in AUDIO_OUTPUT_EXTENSIONS else ".mp3"
+            else:
+                chosen_ext = ".mp4"
+            state.metadata["output_extension"] = chosen_ext
+            output_media = self.exports_dir / f"{output_stem}{chosen_ext}"
 
             keep_list = [
                 (
@@ -479,10 +496,10 @@ class TaskManager:
                 state.progress = max(state.progress, min(0.9, 0.1 + 0.75 * clamped))
 
             with self._stage_input_on_ramdisk(input_path, state) as staged_input:
-                state.message = "正在剪辑视频"
+                state.message = "正在剪辑音频" if (not has_video and has_audio) else "正在剪辑视频"
                 cut_video(
                     staged_input,
-                    output_video,
+                    output_media,
                     keep_list,
                     reencode=reencode,
                     snap_zero_cross=snap_zero_cross,
@@ -501,9 +518,9 @@ class TaskManager:
             )
             rebased = rebase_transcript_after_cuts(transcript_model, time_ranges)
             state.progress = max(state.progress, 0.95)
-
             outputs: Dict[str, Any] = {
-                "output_video": str(output_video),
+                "output_path": str(output_media),
+                "output_video": str(output_media),
                 "rebased_transcript": rebased.model_dump(),
             }
 
@@ -511,7 +528,7 @@ class TaskManager:
             state.status = "completed"
             state.result = outputs
             state.message = "剪辑完成"
-            LOGGER.info("task %s cut completed -> %s", state.id, output_video)
+            LOGGER.info("task %s cut completed -> %s", state.id, output_media)
         except Exception as exc:
             state.status = "failed"
             state.message = str(exc)
