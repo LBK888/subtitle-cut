@@ -16,6 +16,7 @@ from .core.srt_vtt import dump_srt, dump_vtt, load_srt
 from .core.transform import (
     TimeRange,
     compute_delete_ranges,
+    derive_keep_ranges,
     invert_ranges,
     rebase_transcript_after_cuts,
 )
@@ -98,7 +99,9 @@ def plan(
     )
 
     total_duration = _transcript_duration(transcript)
-    keep_ranges = invert_ranges(total_duration, delete_ranges)
+    keep_ranges = derive_keep_ranges(transcript, delete_ranges)
+    if not keep_ranges:
+        keep_ranges = invert_ranges(total_duration, delete_ranges)
 
     payload = {
         "total_duration": total_duration,
@@ -141,7 +144,7 @@ def cut(
         raise click.UsageError("Keep ranges are empty; nothing to cut.")
 
     keep_tuples = [(rng.start, rng.end) for rng in keep_ranges]
-    cut_video(
+    encoder_note = cut_video(
         input_path,
         output_path,
         keep_tuples,
@@ -151,6 +154,8 @@ def cut(
         chunk_size=chunk_size,
         snap_zero_cross=snap_zero_cross,
     )
+    if encoder_note:
+        click.echo(encoder_note)
     click.echo(f"Exported clipped video to {output_path}")
 
 
@@ -216,7 +221,9 @@ def run(
     )
 
     total_duration = _transcript_duration(transcript)
-    keep_ranges = invert_ranges(total_duration, delete_ranges)
+    keep_ranges = derive_keep_ranges(transcript, delete_ranges)
+    if not keep_ranges:
+        keep_ranges = invert_ranges(total_duration, delete_ranges)
 
     if snap == "keyframe":
         keyframes = probe_keyframes(input_path)
@@ -228,7 +235,7 @@ def run(
             delete_ranges = invert_ranges(total_duration, keep_ranges)
 
     keep_tuples = [(rng.start, rng.end) for rng in keep_ranges]
-    cut_video(
+    encoder_note = cut_video(
         input_path,
         output_path,
         keep_tuples,
@@ -238,8 +245,14 @@ def run(
         chunk_size=chunk_size,
         snap_zero_cross=snap_zero_cross,
     )
+    if encoder_note:
+        click.echo(encoder_note)
 
-    rebased = rebase_transcript_after_cuts(transcript, delete_ranges)
+    rebased = rebase_transcript_after_cuts(
+        transcript,
+        delete_ranges,
+        keep_ranges=keep_ranges,
+    )
 
     if export_srt:
         dump_srt(rebased, export_srt)

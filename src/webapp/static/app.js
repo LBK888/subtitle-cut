@@ -1,8 +1,4 @@
-﻿import {
-  SILENCE_COMMA_THRESHOLD,
-  SILENCE_PLACEHOLDER_THRESHOLD,
-  buildSegmentTokens,
-} from "./transcript-utils.js";
+﻿import { buildSegmentTokens } from "./transcript-utils.js";
 import { TimelineController } from "./timeline.js";
 
 const state = {
@@ -79,6 +75,7 @@ const state = {
   transcriptHoverKey: null,
   importGuardInitialized: false,
   // END-EDIT
+  encoderWarningsShown: new Set(),
 };
 
 if (typeof window !== "undefined") {
@@ -1496,18 +1493,25 @@ function renderTranscript(transcript) {
 
   const offset = transcript.pagination?.offset || 0;
   let previousEnd = null;
+  let previousWordsContainer = null;
   transcript.segments.forEach((segment, idx) => {
     const globalIndex = offset + idx;
-    const { segmentEl, lastEnd } = buildSegmentElement(segment, globalIndex, previousEnd);
+    const { segmentEl, lastEnd, wordsContainer } = buildSegmentElement(
+      segment,
+      globalIndex,
+      previousEnd,
+      previousWordsContainer,
+    );
     previousEnd = lastEnd;
     dom.segmentsContainer.appendChild(segmentEl);
+    previousWordsContainer = wordsContainer;
   });
   applyShowDeletedPreference();
   updateSelectionHighlights();
   updateSearchHighlights();
 }
 
-function buildSegmentElement(segment, globalIndex, previousEnd) {
+function buildSegmentElement(segment, globalIndex, previousEnd, previousWordsContainer) {
   const segmentEl = document.createElement("div");
   segmentEl.className = "segment";
   segmentEl.dataset.segmentIndex = String(globalIndex);
@@ -1526,13 +1530,16 @@ function buildSegmentElement(segment, globalIndex, previousEnd) {
       return;
     }
     const normalized = normalizeToken(token, { segmentIndex: globalIndex });
+    const targetContainer = normalized.attachToPrevious && previousWordsContainer
+      ? previousWordsContainer
+      : wordsContainer;
     const node = buildTokenNode(normalized);
-    wordsContainer.appendChild(node);
+    targetContainer.appendChild(node);
   });
 
   segmentEl.appendChild(header);
   segmentEl.appendChild(wordsContainer);
-  return { segmentEl, lastEnd };
+  return { segmentEl, lastEnd, wordsContainer };
 }
 
 function normalizeToken(token, options = {}) {
@@ -2841,8 +2848,21 @@ function parseRawFillerList(raw) {
 
 function getFillerMatches() {
   const query = (state.cachedFillerQuery || dom.fillerWordsInput?.value || "").trim();
-  const mergedList = parseRawFillerList(query || "");
-  const dictionary = mergedList.length ? mergedList : state.commonFillerWords;
+  const temporaryList = parseRawFillerList(query || "");
+  const dictionary = [];
+  const seen = new Set();
+  temporaryList.forEach((phrase) => {
+    if (!seen.has(phrase)) {
+      seen.add(phrase);
+      dictionary.push(phrase);
+    }
+  });
+  state.commonFillerWords.forEach((phrase) => {
+    if (!seen.has(phrase)) {
+      seen.add(phrase);
+      dictionary.push(phrase);
+    }
+  });
   if (!dictionary.length) return [];
   const matchedTokens = new Map();
   dictionary.forEach((phrase) => {
@@ -3288,6 +3308,12 @@ async function handleUploadAndTranscribe(event) {
     });
     if (!uploadResponse.ok) throw new Error(`上传文件失败: ${uploadResponse.status}`);
     const uploadData = await uploadResponse.json();
+    if (uploadData.repair_notice) {
+      logWarn(uploadData.repair_notice);
+    }
+    if (uploadData.repair_detail) {
+      logInfo(`FFmpeg 输出：${uploadData.repair_detail}`);
+    }
     const mediaPath = uploadData.path;
     if (!mediaPath) throw new Error("服务器未返回媒体路径");
 
@@ -3383,6 +3409,16 @@ function stopTaskPolling() {
 async function handleTaskUpdate(data) {
   const type = state.currentTaskType;
   const status = data.status;
+  const encoderNote = data?.metadata?.encoder_note;
+  if (encoderNote) {
+    if (!(state.encoderWarningsShown instanceof Set)) {
+      state.encoderWarningsShown = new Set();
+    }
+    if (!state.encoderWarningsShown.has(encoderNote)) {
+      state.encoderWarningsShown.add(encoderNote);
+      logWarn(encoderNote);
+    }
+  }
   if (type === "transcribe") {
     dom.taskStatus.textContent = `${data.message || status}`;
     const hasProgress = typeof data.progress === "number" && Number.isFinite(data.progress);

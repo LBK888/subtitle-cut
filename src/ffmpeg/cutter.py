@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
 import io
 import os
@@ -12,7 +13,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Callable, List, Sequence, Tuple, Union
+from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -22,6 +23,8 @@ PathLike = Union[str, Path]
 TimeRange = Tuple[float, float]
 
 LOGGER = logging.getLogger(__name__)
+
+NVENC_XFADE_FALLBACK_NOTE = "检测到启用了交叉淡化，当前版本暂不支持使用 NVIDIA NVENC，将自动改用 libx264 编码。"
 
 
 @dataclass
@@ -33,7 +36,9 @@ class FilterPlan:
     has_audio: bool
 
 
-_STREAM_KIND_RE = re.compile(r"Stream #\d+:\d+(?:\[[^\]]*\])?:\s*(Video|Audio)\b", re.IGNORECASE)
+_STREAM_KIND_RE = re.compile(
+    r"Stream #\d+:\d+(?:\[[^\]]*\]|\([^\)]*\))*:\s*(Video|Audio)\b", re.IGNORECASE
+)
 
 _AUDIO_OUTPUT_PROFILES: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
     ".mp3": ("mp3", ("-c:a", "libmp3lame", "-b:a", "192k"), ()),
@@ -67,6 +72,47 @@ def probe_media_streams(input_path: PathLike, ffmpeg_binary: str) -> tuple[bool,
     return has_video, has_audio
 
 
+def _probe_average_frame_rate(
+    input_path: PathLike,
+    ffmpeg_binary: str,
+) -> Optional[str]:
+    """尝试读取源视频的平均帧率（形如 30000/1001）。"""
+    ffprobe_binary = "ffprobe"
+    ffmpeg_path = shutil.which(ffmpeg_binary)
+    if ffmpeg_path:
+        candidate = Path(ffmpeg_path).with_name("ffprobe")
+        if candidate.exists():
+            ffprobe_binary = str(candidate)
+    command = [
+        ffprobe_binary,
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=avg_frame_rate",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(input_path),
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            text=True,
+        )
+    except FileNotFoundError:
+        return None
+    if result.returncode != 0 or not result.stdout:
+        return None
+    value = result.stdout.strip()
+    if not value or value in {"0/0", "0"}:
+        return None
+    return value
+
+
 def _create_filter_plan(
     ranges: Sequence[TimeRange],
     *,
@@ -74,6 +120,7 @@ def _create_filter_plan(
     xfade_ms: float,
     has_video: bool,
     has_audio: bool,
+    frame_rate_expr: Optional[str],
 ) -> FilterPlan:
     filter_parts: List[str] = []
     segment_durations: List[float] = []
@@ -172,7 +219,11 @@ def _create_filter_plan(
                 video_prev = out_label
                 accumulated = accumulated + segment_durations[idx] - xfade_seconds
 
-            filter_parts.append(f"[{video_prev}]format=yuv420p[vout]")
+            final_video_label = video_prev
+            if frame_rate_expr:
+                filter_parts.append(f"[{final_video_label}]fps={frame_rate_expr}[vf_rate]")
+                final_video_label = "vf_rate"
+            filter_parts.append(f"[{final_video_label}]format=yuv420p[vout]")
             if audio_enabled:
                 filter_parts.append(f"[{audio_prev}]anull[aout]")
         else:
@@ -181,13 +232,24 @@ def _create_filter_plan(
                     f"[{video_labels[idx]}][{audio_labels[idx]}]" for idx in range(len(video_labels))
                 )
                 filter_parts.append(
-                    f"{concat_inputs}concat=n={len(video_labels)}:v=1:a=1[vout][aout]"
+                    f"{concat_inputs}concat=n={len(video_labels)}:v=1:a=1[vcat][acat]"
                 )
+                final_video_label = "vcat"
+                if frame_rate_expr:
+                    filter_parts.append(f"[{final_video_label}]fps={frame_rate_expr}[vf_rate]")
+                    final_video_label = "vf_rate"
+                filter_parts.append(f"[{final_video_label}]format=yuv420p[vout]")
+                filter_parts.append(f"[acat]anull[aout]")
             else:
                 concat_inputs = "".join(f"[{video_labels[idx]}]" for idx in range(len(video_labels)))
                 filter_parts.append(
-                    f"{concat_inputs}concat=n={len(video_labels)}:v=1:a=0[vout]"
+                    f"{concat_inputs}concat=n={len(video_labels)}:v=1:a=0[vcat]"
                 )
+                final_video_label = "vcat"
+                if frame_rate_expr:
+                    filter_parts.append(f"[{final_video_label}]fps={frame_rate_expr}[vf_rate]")
+                    final_video_label = "vf_rate"
+                filter_parts.append(f"[{final_video_label}]format=yuv420p[vout]")
     elif audio_enabled:
         if use_audio_crossfade:
             audio_prev = audio_labels[0]
@@ -343,6 +405,7 @@ def _execute_chunked_cut(
     xfade_ms: float,
     has_video: bool,
     has_audio: bool,
+    frame_rate_expr: Optional[str],
     progress_callback: Callable[[float], None] | None,
     progress_start: float,
     progress_span: float,
@@ -440,6 +503,7 @@ def _execute_chunked_cut(
             xfade_ms=xfade_ms,
             has_video=has_video,
             has_audio=has_audio,
+            frame_rate_expr=frame_rate_expr,
         )
         try:
             progress_duration = plan.expected_duration if plan.expected_duration > 0.0 else duration
@@ -504,9 +568,14 @@ def cut_video(
     zero_cross_max_shift_ms: float = 10.0,
     xfade_ms: float = 0.0,
     chunk_size: int = 0,
+    forced_streams: tuple[bool, bool] | None = None,
     progress_callback: Callable[[float], None] | None = None,
-) -> None:
-    """执行视频裁剪并输出结果。"""
+) -> Optional[str]:
+    """执行视频裁剪并输出结果。
+
+    返回值:
+        当启用视频交叉淡化且使用 NVENC 编码需要回退时，返回提示信息；否则返回 None。
+    """
 
     def _emit_progress(value: float) -> None:
         if progress_callback is None:
@@ -566,6 +635,8 @@ def cut_video(
     if total_keep_duration <= 0.0:
         raise ValueError("无有效保留区间时长")
 
+    encoder_note: Optional[str] = None
+
     codec = reencode.lower()
     if codec not in {"auto", "copy", "reencode", "nvenc"}:
         codec = "auto"
@@ -585,9 +656,27 @@ def cut_video(
     output_path_obj = Path(output_path)
     output_suffix = output_path_obj.suffix.lower()
 
-    has_video, has_audio = probe_media_streams(input_path, ffmpeg_binary)
-    if not has_video and not has_audio:
-        raise ValueError("未检测到可用的音频或视频轨道")
+    frame_rate_expr: Optional[str] = None
+    if forced_streams is not None:
+        has_video, has_audio = forced_streams
+    else:
+        has_video, has_audio = probe_media_streams(input_path, ffmpeg_binary)
+        if not has_video and not has_audio:
+            suffix = Path(input_path).suffix.lower()
+            if suffix in _AUDIO_OUTPUT_PROFILES:
+                has_audio = True
+                LOGGER.warning(
+                    "media stream probing failed for %s, assuming audio-only based on extension",
+                    input_path,
+                )
+            else:
+                has_video = True
+                LOGGER.warning(
+                    "media stream probing failed for %s, assuming video stream is present",
+                    input_path,
+                )
+    if has_video:
+        frame_rate_expr = _probe_average_frame_rate(input_path, ffmpeg_binary)
 
     audio_profile = None
     if not has_video and has_audio:
@@ -595,6 +684,11 @@ def cut_video(
         if audio_profile is None:
             audio_profile = _AUDIO_OUTPUT_PROFILES[_DEFAULT_AUDIO_PROFILE]
             LOGGER.warning("unknown audio extension %s, defaulting to mp3 encoding", output_suffix)
+
+    if codec == "nvenc" and has_video and len(keep_list) > 1 and xfade_ms > 0.0:
+        encoder_note = NVENC_XFADE_FALLBACK_NOTE
+        LOGGER.warning(encoder_note)
+        codec = "auto"
 
     use_chunk = (
         has_video
@@ -615,13 +709,14 @@ def cut_video(
             xfade_ms=xfade_ms,
             has_video=has_video,
             has_audio=has_audio,
+            frame_rate_expr=frame_rate_expr,
             progress_callback=progress_callback,
             progress_start=0.25,
             progress_span=0.65,
         )
         _emit_progress(0.92)
         _emit_progress(1.0)
-        return
+        return encoder_note
 
     _emit_progress(0.2)
 
@@ -631,6 +726,7 @@ def cut_video(
         xfade_ms=xfade_ms,
         has_video=has_video,
         has_audio=has_audio,
+        frame_rate_expr=frame_rate_expr,
     )
 
     _emit_progress(0.25)
@@ -700,6 +796,7 @@ def cut_video(
             pass
 
     _emit_progress(1.0)
+    return encoder_note
 
 
 def _snap_ranges_to_zero_crossings(

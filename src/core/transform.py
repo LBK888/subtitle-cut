@@ -92,19 +92,93 @@ def invert_ranges(total_duration: float, delete_ranges: Iterable[TimeRange]) -> 
     return [rng for rng in keep if rng.end > rng.start]
 
 
+def derive_keep_ranges(
+    transcript: Transcript,
+    delete_ranges: Sequence[TimeRange],
+    *,
+    merge_gap: float = 0.05,
+    coverage_tolerance: float = 1e-3,
+) -> List[TimeRange]:
+    """根据转写内容推导保留区间。"""
+
+    total_duration = _transcript_duration(transcript)
+    if total_duration <= 0.0:
+        return []
+
+    normalized_deletes = sorted(
+        (
+            rng.clamped(minimum=0.0, maximum=total_duration)
+            for rng in delete_ranges
+        ),
+        key=lambda rng: rng.start,
+    )
+
+    def _is_fully_deleted(rng: TimeRange) -> bool:
+        length = rng.end - rng.start
+        if length <= 0.0:
+            return True
+        covered = 0.0
+        for delete_rng in normalized_deletes:
+            if delete_rng.end <= rng.start:
+                continue
+            if delete_rng.start >= rng.end:
+                break
+            overlap_start = max(rng.start, delete_rng.start)
+            overlap_end = min(rng.end, delete_rng.end)
+            if overlap_end > overlap_start:
+                covered += overlap_end - overlap_start
+                if covered >= length - coverage_tolerance:
+                    return True
+        return covered >= length - coverage_tolerance
+
+    candidate: List[TimeRange] = []
+    for segment in transcript.segments:
+        for word in _segment_words(segment):
+            start = float(word.start if word.start is not None else 0.0)
+            end = float(word.end if word.end is not None else start)
+            rng = TimeRange(start=start, end=end).clamped(minimum=0.0, maximum=total_duration)
+            if rng.end <= rng.start:
+                continue
+            if _is_fully_deleted(rng):
+                continue
+            candidate.append(rng)
+
+    if not candidate:
+        return []
+
+    candidate.sort(key=lambda rng: (rng.start, rng.end))
+    gap = max(merge_gap, 0.0)
+    merged: List[TimeRange] = []
+    for rng in candidate:
+        if not merged:
+            merged.append(TimeRange(start=rng.start, end=rng.end))
+            continue
+        prev = merged[-1]
+        if rng.start <= prev.end + gap:
+            prev.end = max(prev.end, rng.end)
+        else:
+            merged.append(TimeRange(start=rng.start, end=rng.end))
+    return merged
+
+
 def rebase_transcript_after_cuts(
-    transcript: Transcript, delete_ranges: Sequence[TimeRange]
+    transcript: Transcript,
+    delete_ranges: Sequence[TimeRange],
+    *,
+    keep_ranges: Sequence[TimeRange] | None = None,
 ) -> Transcript:
     """删除指定时间段后重新映射转录。"""
 
     total_duration = _transcript_duration(transcript)
-    keep_ranges = invert_ranges(total_duration, delete_ranges)
-    if not keep_ranges:
+    resolved_keep = list(keep_ranges) if keep_ranges else derive_keep_ranges(transcript, delete_ranges)
+    if not resolved_keep:
+        resolved_keep = invert_ranges(total_duration, delete_ranges)
+    if not resolved_keep:
         return Transcript(segments=[], language=transcript.language)
 
     offsets = []
     accumulated = 0.0
-    for rng in keep_ranges:
+    for rng in resolved_keep:
         offsets.append((rng.start, rng.end, accumulated - rng.start))
         accumulated += rng.end - rng.start
 

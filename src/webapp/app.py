@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import subprocess
 import uuid
 from datetime import datetime
 from logging import handlers
@@ -17,13 +18,90 @@ from pydantic import ValidationError
 from ..core.schema import Transcript
 from ..core.srt_vtt import dump_srt
 from ..core.silence import analyze_silence
-from ..core.transform import TimeRange, invert_ranges
+from ..core.transform import TimeRange, derive_keep_ranges, invert_ranges
+from ..ffmpeg.utils import run_ffmpeg
 from .storage import ProjectStorage
 from .tasks import TaskManager, _merge_time_ranges
 from .waveform import WaveformGenerationError, generate_waveform_payload
 
 
 LOGGER = logging.getLogger(__name__)
+
+AUDIO_EXTENSIONS = {
+    ".aac",
+    ".aif",
+    ".aiff",
+    ".flac",
+    ".m4a",
+    ".mka",
+    ".mp3",
+    ".ogg",
+    ".opus",
+    ".wav",
+    ".wma",
+}
+
+
+def _detect_audio_corruption(media_path: Path, ffmpeg_binary: str) -> tuple[bool, str]:
+    command = [
+        ffmpeg_binary,
+        "-v",
+        "error",
+        "-hide_banner",
+        "-xerror",
+        "-err_detect",
+        "explode",
+        "-i",
+        str(media_path),
+        "-f",
+        "null",
+        "-",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except FileNotFoundError:
+        LOGGER.warning("未找到 FFmpeg 可执行文件 %s，跳过音频损坏检查", ffmpeg_binary)
+        return False, ""
+    stderr_text = (completed.stderr or "").strip()
+    if completed.returncode != 0:
+        return True, stderr_text
+    return False, stderr_text
+
+
+def _reencode_audio_file(
+    source_path: Path,
+    target_path: Path,
+    ffmpeg_binary: str,
+) -> tuple[bool, str]:
+    command = [
+        "-hide_banner",
+        "-i",
+        str(source_path),
+        "-acodec",
+        "pcm_s16le",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        str(target_path),
+    ]
+    try:
+        run_ffmpeg(command, binary=ffmpeg_binary)
+    except FileNotFoundError:
+        LOGGER.warning("未找到 FFmpeg 可执行文件 %s，无法执行音频修复", ffmpeg_binary)
+        return False, "未找到 FFmpeg 可执行文件"
+    except subprocess.CalledProcessError as exc:
+        error_text = ""
+        if exc.stderr:
+            error_text = exc.stderr if isinstance(exc.stderr, str) else str(exc.stderr)
+        return False, error_text or "FFmpeg 重编码失败"
+    return True, ""
 
 
 def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
@@ -432,8 +510,17 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
         except FileNotFoundError:
             abort(404, description=f"媒体文件不存在 {media_path}")
         except WaveformGenerationError as exc:
-            LOGGER.exception("生成波形失败: %s", exc)
-            abort(500, description="生成波形失败")
+            LOGGER.warning("生成波形失败，将返回空波形: %s", exc)
+            waveform_payload = {
+                "values": [],
+                "duration": 0.0,
+                "sample_rate": 0,
+                "min": 0.0,
+                "max": 0.0,
+                "generated_at": datetime.now().isoformat(),
+                "source": str(media_path),
+                "error": str(exc),
+            }
 
         version = storage_local.save_snapshot(project_id, "waveform", waveform_payload)
         return jsonify({
@@ -475,7 +562,36 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
         filename = f"upload_{uuid.uuid4().hex}{extension}"
         save_path = uploads_dir_local / filename
         uploaded_file.save(save_path)
-        return jsonify({"path": str(save_path)}), 201
+
+        response_payload: Dict[str, Any] = {"path": str(save_path)}
+        ffmpeg_binary = app.config.get("SUBTITLE_CUT_WEB_FFMPEG", "ffmpeg")
+        if extension in AUDIO_EXTENSIONS:
+            corrupted, detail = _detect_audio_corruption(save_path, ffmpeg_binary)
+            if corrupted:
+                LOGGER.warning("检测到音频包含损坏帧，开始尝试修复: %s", save_path)
+                repaired_filename = f"upload_{uuid.uuid4().hex}.wav"
+                repaired_path = uploads_dir_local / repaired_filename
+                success, repair_error = _reencode_audio_file(save_path, repaired_path, ffmpeg_binary)
+                if success:
+                    try:
+                        save_path.unlink(missing_ok=True)
+                    except Exception as exc:  # pragma: no cover - 清理失败不影响主流程
+                        LOGGER.warning("删除原始损坏音频失败 %s: %s", save_path, exc)
+                    save_path = repaired_path
+                    response_payload["path"] = str(save_path)
+                    response_payload["repaired"] = True
+                    notice = "检测到音频存在损坏帧，已使用 FFmpeg 重编码生成修复文件。"
+                    response_payload["repair_notice"] = notice
+                    if detail:
+                        response_payload["repair_detail"] = detail
+                    LOGGER.info("音频修复完成，已替换为修复版本: %s", save_path)
+                else:
+                    response_payload["repaired"] = False
+                    response_payload["repair_notice"] = "检测到音频存在损坏帧，自动修复失败，请检查原始文件。"
+                    if repair_error:
+                        response_payload["repair_detail"] = repair_error
+                    LOGGER.warning("音频修复失败: %s %s", save_path, repair_error or "")
+        return jsonify(response_payload), 201
 
     @app.post("/api/tasks/transcribe")
     def submit_transcribe() -> Any:
@@ -554,7 +670,9 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
                 for item in delete_ranges
             ]
         )
-        keep_ranges = invert_ranges(total_duration, delete_time_ranges)
+        keep_ranges = derive_keep_ranges(transcript_model, delete_time_ranges)
+        if not keep_ranges:
+            keep_ranges = invert_ranges(total_duration, delete_time_ranges)
         keep_tuples = [(round(rng.start, 6), round(rng.end, 6)) for rng in keep_ranges]
         if not keep_tuples:
             abort(400, description="无保留区间，无法剪辑")

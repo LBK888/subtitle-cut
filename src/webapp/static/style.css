@@ -994,8 +994,18 @@ button:disabled {
   border-color: var(--danger);
   color: var(--danger);
 }
+.punctuation.selected {
+  background: rgba(255, 92, 116, 0.18);
+  border-color: var(--danger);
+  color: var(--danger);
+}
 
 .word.marked {
+  background: rgba(47, 128, 237, 0.24);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.punctuation.marked {
   background: rgba(47, 128, 237, 0.24);
   border-color: var(--accent);
   color: var(--accent);
@@ -1194,8 +1204,18 @@ button:disabled {
   border-color: var(--danger);
   color: var(--danger);
 }
+.punctuation.selected {
+  background: rgba(255, 92, 116, 0.18);
+  border-color: var(--danger);
+  color: var(--danger);
+}
 
 .word.marked {
+  background: rgba(47, 128, 237, 0.24);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.punctuation.marked {
   background: rgba(47, 128, 237, 0.24);
   border-color: var(--accent);
   color: var(--accent);

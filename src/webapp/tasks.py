@@ -20,7 +20,7 @@ from typing import Any, Dict, Iterator, Optional, Set
 from ..asr.transcribe import transcribe_to_json
 from ..core.schema import Transcript
 from ..core.transform import TimeRange, rebase_transcript_after_cuts
-from ..ffmpeg.cutter import cut_video, probe_media_streams
+from ..ffmpeg.cutter import NVENC_XFADE_FALLBACK_NOTE, cut_video, probe_media_streams
 from ..webapp.storage import ProjectStorage
 
 
@@ -491,13 +491,22 @@ class TaskManager:
             if not keep_list:
                 raise ValueError("无有效保留区间，无法执行剪辑")
 
+            should_warn_nvenc = (
+                reencode.strip().lower() == "nvenc"
+                and xfade_ms > 0.0
+                and has_video
+                and len(keep_list) > 1
+            )
+            if should_warn_nvenc:
+                state.metadata["encoder_note"] = NVENC_XFADE_FALLBACK_NOTE
+
             def _update_cut_progress(fraction: float) -> None:
                 clamped = max(0.0, min(1.0, fraction))
                 state.progress = max(state.progress, min(0.9, 0.1 + 0.75 * clamped))
 
             with self._stage_input_on_ramdisk(input_path, state) as staged_input:
                 state.message = "正在剪辑音频" if (not has_video and has_audio) else "正在剪辑视频"
-                cut_video(
+                encoder_note = cut_video(
                     staged_input,
                     output_media,
                     keep_list,
@@ -505,8 +514,11 @@ class TaskManager:
                     snap_zero_cross=snap_zero_cross,
                     xfade_ms=xfade_ms,
                     chunk_size=chunk_size,
+                    forced_streams=(has_video, has_audio),
                     progress_callback=_update_cut_progress,
                 )
+                if encoder_note:
+                    state.metadata["encoder_note"] = encoder_note
             state.progress = max(state.progress, 0.92)
 
             transcript_model = Transcript.model_validate(transcript_payload)
@@ -516,7 +528,12 @@ class TaskManager:
                     for item in delete_ranges
                 ]
             )
-            rebased = rebase_transcript_after_cuts(transcript_model, time_ranges)
+            keep_time_ranges = [TimeRange(start=start, end=end) for start, end in keep_list]
+            rebased = rebase_transcript_after_cuts(
+                transcript_model,
+                time_ranges,
+                keep_ranges=keep_time_ranges,
+            )
             state.progress = max(state.progress, 0.95)
             outputs: Dict[str, Any] = {
                 "output_path": str(output_media),

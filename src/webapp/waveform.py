@@ -48,8 +48,13 @@ def generate_waveform_payload(
 
     command = [
         ffmpeg_binary,
-        "-v",
+        "-hide_banner",
+        "-loglevel",
         "error",
+        "-fflags",
+        "+discardcorrupt",
+        "-err_detect",
+        "ignore_err",
         "-i",
         str(media_path),
         "-vn",
