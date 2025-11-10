@@ -1221,18 +1221,21 @@ button:disabled {
   color: var(--accent);
 }
 
-.word.search-hit {
+.word.search-hit,
+.punctuation.search-hit {
   border-color: var(--accent);
   background: rgba(47, 128, 237, 0.24);
 }
 
-.word.search-active {
+.word.search-active,
+.punctuation.search-active {
   border-color: #ffffff;
   background: rgba(255, 255, 255, 0.32);
   color: #0f111a;
 }
 
 .word.preview-delete,
+.punctuation.preview-delete,
 .silence-placeholder.preview-delete {
   border-color: var(--danger);
   background: rgba(255, 92, 116, 0.22);

@@ -2614,7 +2614,17 @@ function handleSearchInput(event) {
 }
 
 function normalizeSearchString(text) {
-  return String(text || "").trim().toLowerCase();
+  let result = String(text || "").trim().toLowerCase();
+  // 标准化标点符号,与transcript-utils.js中的normalizeWordText保持一致
+  result = result
+    .replace(/[\u3001\uFF64\uFF65\u203B]/gu, "\uFF0C")  // 统一为中文逗号
+    .replace(/[,\uFF0C]/gu, "\uFF0C")                    // 统一为中文逗号
+    .replace(/[.\u3002]/gu, "\u3002")                    // 统一为中文句号
+    .replace(/[;\uFF1B]/gu, "\uFF1B")                    // 统一为中文分号
+    .replace(/[:\uFF1A]/gu, "\uFF1A")                    // 统一为中文冒号
+    .replace(/[!\uFF01]/gu, "\uFF01")                    // 统一为中文感叹号
+    .replace(/[?\uFF1F]/gu, "\uFF1F");                   // 统一为中文问号
+  return result;
 }
 
 function normalizedTokenText(token, options = {}) {
@@ -2625,7 +2635,9 @@ function normalizedTokenText(token, options = {}) {
 }
 
 function isTokenEligibleForMatching(token, includeDeleted = false) {
-  if (!token || token.type !== "word") return false;
+  if (!token) return false;
+  // 允许word和punctuation类型参与搜索匹配
+  if (token.type !== "word" && token.type !== "punctuation") return false;
   if (!includeDeleted && state.deletedKeys.has(token.key)) return false;
   const textValue = typeof token.text === "string" ? token.text.trim() : "";
   return Boolean(textValue);
