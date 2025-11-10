@@ -20,7 +20,7 @@ def probe_keyframes(path: PathLike) -> List[float]:
         "v:0",
         "-show_frames",
         "-show_entries",
-        "frame=pkt_pts_time,key_frame",
+        "frame=pkt_pts_time,best_effort_timestamp_time,key_frame",
         "-of",
         "json",
         str(path),
@@ -30,7 +30,8 @@ def probe_keyframes(path: PathLike) -> List[float]:
         result = subprocess.run(
             command,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True,
         )
     except (FileNotFoundError, subprocess.CalledProcessError):
@@ -44,13 +45,28 @@ def probe_keyframes(path: PathLike) -> List[float]:
     frames = payload.get("frames", [])
     keyframes: List[float] = []
     for frame in frames:
+        is_key_raw = frame.get("key_frame", 0)
         try:
-            is_key = int(frame.get("key_frame", 0)) == 1
-            pts = float(frame.get("pkt_pts_time", 0.0))
+            is_key = int(is_key_raw) == 1
         except (TypeError, ValueError):
             continue
-        if is_key:
-            keyframes.append(max(pts, 0.0))
+        if not is_key:
+            continue
+        pts_raw = frame.get("pkt_pts_time")
+        fallback_raw = frame.get("best_effort_timestamp_time")
+        pts_value: float | None = None
+        for candidate in (pts_raw, fallback_raw):
+            if candidate is None:
+                continue
+            try:
+                pts_value = float(candidate)
+            except (TypeError, ValueError):
+                continue
+            else:
+                break
+        if pts_value is None:
+            continue
+        keyframes.append(max(pts_value, 0.0))
 
     keyframes.sort()
     return keyframes
@@ -91,3 +107,4 @@ def _snap_to_next(value: float, keyframes: Sequence[float]) -> float:
         if frame >= value:
             return frame
     return keyframes[-1]
+

@@ -22,7 +22,9 @@ from ..core.transform import TimeRange, derive_keep_ranges, invert_ranges
 from ..ffmpeg.utils import run_ffmpeg
 from .storage import ProjectStorage
 from .tasks import TaskManager, _merge_time_ranges
+from .ramdisk import get_ramdisk_manager
 from .waveform import WaveformGenerationError, generate_waveform_payload
+from .config import get_app_config
 
 
 LOGGER = logging.getLogger(__name__)
@@ -63,7 +65,8 @@ def _detect_audio_corruption(media_path: Path, ffmpeg_binary: str) -> tuple[bool
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     except FileNotFoundError:
         LOGGER.warning("未找到 FFmpeg 可执行文件 %s，跳过音频损坏检查", ffmpeg_binary)
@@ -113,8 +116,54 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
 
     data_root = Path(app.config.get("SUBTITLE_CUT_WEB_ROOT", Path(__file__).resolve().parents[2] / "data"))
     database_path = Path(app.config.get("SUBTITLE_CUT_WEB_DB_PATH", data_root / "webapp.db"))
-    uploads_dir = Path(app.config.get("SUBTITLE_CUT_WEB_UPLOAD_DIR", data_root / "uploads"))
-    task_dir = Path(app.config.get("SUBTITLE_CUT_WEB_TASK_DIR", data_root / "tasks"))
+    
+    # 初始化应用配置
+    config_file = data_root / "config.json"
+    app_config = get_app_config(config_file)
+    
+    # 初始化虚拟硬盘管理器(但不自动创建)
+    # 从配置文件读取虚拟硬盘设置
+    ramdisk_enabled = app_config.ramdisk_enabled
+    ramdisk_size_gb = app_config.ramdisk_size_gb
+    
+    # 支持从环境变量覆盖配置
+    import os
+    if "SUBTITLE_CUT_RAMDISK_ENABLED" in os.environ:
+        ramdisk_enabled = os.environ["SUBTITLE_CUT_RAMDISK_ENABLED"].lower() in ("true", "1", "yes")
+    if "SUBTITLE_CUT_RAMDISK_SIZE_GB" in os.environ:
+        try:
+            ramdisk_size_gb = int(os.environ["SUBTITLE_CUT_RAMDISK_SIZE_GB"])
+        except ValueError:
+            pass
+    
+    LOGGER.info("虚拟硬盘配置: enabled=%s, size_gb=%s (不自动创建,需手动应用)", ramdisk_enabled, ramdisk_size_gb)
+    
+    # 创建管理器但不初始化(不调用initialize)
+    from .ramdisk import RamDiskManager
+    ramdisk_mgr = RamDiskManager(enabled=ramdisk_enabled, size_gb=ramdisk_size_gb)
+    
+    # 如果配置为启用,尝试查找已存在的虚拟硬盘
+    if ramdisk_enabled:
+        import shutil
+        imdisk_exe = shutil.which("imdisk")
+        if imdisk_exe:
+            ramdisk_mgr.imdisk_exe = imdisk_exe
+            existing_mount = ramdisk_mgr._find_existing_ramdisk()
+            if existing_mount:
+                ramdisk_mgr.mount_point = f"{existing_mount}:"
+                ramdisk_mgr.mount_root = Path(f"{existing_mount}:\\")
+                LOGGER.info("找到已存在的虚拟硬盘: %s", ramdisk_mgr.mount_point)
+                ramdisk_mgr.ensure_directories()
+    
+    # 注册到全局
+    from . import ramdisk as ramdisk_module
+    ramdisk_module._ramdisk_manager = ramdisk_mgr
+    
+    # 根据虚拟硬盘状态设置初始路径
+    uploads_dir = ramdisk_mgr.get_uploads_dir()
+    task_dir = ramdisk_mgr.get_tasks_dir()
+    
+    # exports目录保持在本地硬盘，因为这是最终输出
     exports_dir = Path(app.config.get("SUBTITLE_CUT_WEB_EXPORT_DIR", data_root / "exports"))
     filler_path = Path(app.config.get("SUBTITLE_CUT_FILLER_PATH", data_root / "fillerwords_zh.txt"))
     log_dir = Path(app.config.get("SUBTITLE_CUT_WEB_LOG_DIR", data_root / "logs"))
@@ -123,19 +172,70 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
     log_path.write_text("", encoding="utf-8")
 
     if not logging.getLogger().handlers:
-        handler = handlers.RotatingFileHandler(log_path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        # 文件日志 - 强制刷新
+        file_handler = handlers.RotatingFileHandler(
+            log_path, 
+            maxBytes=5 * 1024 * 1024, 
+            backupCount=3, 
+            encoding="utf-8"
+        )
+        file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        file_handler.setLevel(logging.DEBUG)  # 捕获所有级别
+        
+        # 控制台日志
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+        console_handler.setLevel(logging.INFO)
+        
+        # 配置root logger
         root_logger = logging.getLogger()
-        root_logger.setLevel(logging.INFO)
-        root_logger.addHandler(handler)
+        root_logger.setLevel(logging.DEBUG)  # 捕获所有级别
+        root_logger.addHandler(file_handler)
+        root_logger.addHandler(console_handler)
+        
+        # 确保所有子模块的日志都被捕获
+        for logger_name in ['src.audio', 'src.asr', 'src.ffmpeg', 'src.webapp', 'src.core']:
+            module_logger = logging.getLogger(logger_name)
+            module_logger.setLevel(logging.DEBUG)
+            module_logger.propagate = True  # 确保传播到root logger
+        
+        LOGGER.info("=" * 80)
+        LOGGER.info("Subtitle-Cut Web App Starting")
+        LOGGER.info("Logging to: %s", log_path)
+        LOGGER.info("Log level: DEBUG (all messages will be captured)")
+        LOGGER.info("=" * 80)
+    
+    # 输出虚拟硬盘信息
+    if ramdisk_mgr.mount_root:
+        LOGGER.info("=" * 80)
+        LOGGER.info("RAM DISK CONFIGURATION")
+        LOGGER.info("Mount point: %s", ramdisk_mgr.mount_point)
+        LOGGER.info("Uploads dir: %s", uploads_dir)
+        LOGGER.info("Tasks dir: %s", task_dir)
+        LOGGER.info("Exports dir: %s (local disk)", exports_dir)
+        LOGGER.info("=" * 80)
+    else:
+        LOGGER.warning("=" * 80)
+        LOGGER.warning("RAM DISK NOT AVAILABLE - Using local disk")
+        LOGGER.warning("Uploads dir: %s", uploads_dir)
+        LOGGER.warning("Tasks dir: %s", task_dir)
+        LOGGER.warning("=" * 80)
 
     storage = ProjectStorage(database_path)
     storage.initialize()
     app.config["SUBTITLE_CUT_STORAGE"] = storage
+    
+    # 确保目录存在
     uploads_dir.mkdir(parents=True, exist_ok=True)
+    task_dir.mkdir(parents=True, exist_ok=True)
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 初始化TaskManager
     task_manager = TaskManager(storage, task_dir, exports_dir)
+    app.config["SUBTITLE_CUT_RAMDISK_MANAGER"] = ramdisk_mgr
     app.config["SUBTITLE_CUT_TASK_MANAGER"] = task_manager
     app.config["SUBTITLE_CUT_UPLOAD_DIR"] = uploads_dir
+    app.config["SUBTITLE_CUT_DATA_ROOT"] = data_root
     app.config["SUBTITLE_CUT_LOG_PATH"] = log_path
     filler_path.parent.mkdir(parents=True, exist_ok=True)
     if not filler_path.exists():
@@ -210,8 +310,22 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
             return jsonify({"error": "transcript 格式不合法", "details": exc.errors()}), 400
 
         name = (payload.get("name") or transcript_model.language or "未命名项目").strip() or "未命名项目"
+        
+        # 保存transcript，同时保留_metadata（包括presplit_metadata）
+        transcript_dict = transcript_model.model_dump()
+        
+        # 如果原始payload包含_metadata，保留它
+        if "_metadata" in transcript_payload:
+            transcript_dict["_metadata"] = transcript_payload["_metadata"]
+            LOGGER.info("Creating project with _metadata")
+            if "presplit_metadata" in transcript_payload.get("_metadata", {}):
+                num_segments = transcript_payload["_metadata"]["presplit_metadata"].get("num_segments", 0)
+                LOGGER.info("Project includes presplit_metadata: %d segments", num_segments)
+        else:
+            LOGGER.info("Creating project without _metadata")
+        
         storage_local = _get_storage()
-        result = storage_local.create_project(name=name, transcript=transcript_model.model_dump())
+        result = storage_local.create_project(name=name, transcript=transcript_dict)
         metadata_payload = payload.get("metadata")
         if metadata_payload:
             storage_local.save_metadata(result["id"], metadata_payload)
@@ -246,6 +360,16 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
             limit = request.args.get("limit", type=int)
             transcript_data = _slice_transcript(snapshot.payload, offset, limit)
 
+        # 日志：检查是否包含_metadata
+        if "_metadata" in transcript_data:
+            if "presplit_metadata" in transcript_data.get("_metadata", {}):
+                num_segments = transcript_data["_metadata"]["presplit_metadata"].get("num_segments", 0)
+                LOGGER.info("Fetching transcript with presplit_metadata: %d segments", num_segments)
+            else:
+                LOGGER.info("Fetching transcript with _metadata (no presplit)")
+        else:
+            LOGGER.info("Fetching transcript without _metadata")
+
         return jsonify({
             "project_id": project_id,
             "version": snapshot.version,
@@ -266,7 +390,18 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
         except ValidationError as exc:
             return jsonify({"error": "transcript 格式不合法", "details": exc.errors()}), 400
 
-        next_version = _get_storage().save_transcript(project_id, transcript_model.model_dump())
+        # 保存transcript，同时保留_metadata（包括presplit_metadata）
+        transcript_dict = transcript_model.model_dump()
+        
+        # 如果原始payload包含_metadata，保留它
+        if "_metadata" in transcript_payload:
+            transcript_dict["_metadata"] = transcript_payload["_metadata"]
+            LOGGER.info("Preserving _metadata in transcript (project %d)", project_id)
+            if "presplit_metadata" in transcript_payload.get("_metadata", {}):
+                num_segments = transcript_payload["_metadata"]["presplit_metadata"].get("num_segments", 0)
+                LOGGER.info("Preserved presplit_metadata: %d segments", num_segments)
+        
+        next_version = _get_storage().save_transcript(project_id, transcript_dict)
         return jsonify({"project_id": project_id, "version": next_version}), 201
 
     # ------------------------------------------------------------------
@@ -609,12 +744,16 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
 
         model = str(payload.get("model", "large-v2"))
         device = str(payload.get("device", "auto"))
+        presplit_mode = str(payload.get("presplit_mode", "auto"))
+        presplit_segments = int(payload.get("presplit_segments", 10))
 
         task_state = _get_task_manager().submit_transcribe(
             media_path,
             engine=engine_value,
             model=model,
             device=device,
+            presplit_mode=presplit_mode,
+            presplit_segments=presplit_segments,
         )
         return jsonify({"task_id": task_state.id, "status": task_state.status}), 202
 
@@ -657,6 +796,14 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
         if transcript_snapshot is None:
             abort(404, description="项目尚未导入转录")
 
+        # 获取预分割元数据（如果有）
+        presplit_metadata = transcript_snapshot.payload.get("_metadata", {}).get("presplit_metadata")
+        
+        if presplit_metadata:
+            LOGGER.info("Found presplit metadata: %d segments", presplit_metadata.get("num_segments", 0))
+        else:
+            LOGGER.info("No presplit metadata found in transcript")
+
         selection_snapshot = storage_local.get_snapshot(project_id, "selection")
         delete_ranges = []
         if selection_snapshot:
@@ -670,9 +817,11 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
                 for item in delete_ranges
             ]
         )
-        keep_ranges = derive_keep_ranges(transcript_model, delete_time_ranges)
-        if not keep_ranges:
-            keep_ranges = invert_ranges(total_duration, delete_time_ranges)
+        # 直接使用invert_ranges：从总时长中删除标记的区间，保留其余部分
+        # 这比derive_keep_ranges高效得多：
+        # - derive_keep_ranges: 逐字检查 → 生成几千个保留区间
+        # - invert_ranges: 反向删除 → 只生成少量保留区间
+        keep_ranges = invert_ranges(total_duration, delete_time_ranges)
         keep_tuples = [(round(rng.start, 6), round(rng.end, 6)) for rng in keep_ranges]
         if not keep_tuples:
             abort(400, description="无保留区间，无法剪辑")
@@ -692,11 +841,11 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
         if xfade_ms < 0.0:
             xfade_ms = 0.0
 
-        chunk_size_raw = payload.get("chunk_size", 20)
+        chunk_size_raw = payload.get("chunk_size", 10)  # 降低默认值,更容易触发多线程
         try:
             chunk_size = int(chunk_size_raw)
         except (TypeError, ValueError):
-            chunk_size = 20
+            chunk_size = 10
         if chunk_size < 1:
             chunk_size = 1
 
@@ -758,6 +907,231 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
         LOGGER.info("exported srt for project %s -> %s", project_id, export_path)
         return jsonify({"status": "ok", "output_path": str(export_path), "file_name": f"{stem}.srt"})
 
+    # ------------------------------------------------------------------
+    # 虚拟硬盘管理接口
+    # ------------------------------------------------------------------
+    @app.get("/api/ramdisk/status")
+    def get_ramdisk_status() -> Any:
+        """获取虚拟硬盘状态"""
+        ramdisk_mgr = get_ramdisk_manager()
+        app_config = get_app_config()
+        
+        # 返回配置文件中的值(下次启动时会使用的配置)
+        # 而不是当前运行时的状态
+        return jsonify({
+            "enabled": app_config.ramdisk_enabled,  # 从配置文件读取
+            "mounted": ramdisk_mgr.mount_point is not None,
+            "mount_point": ramdisk_mgr.mount_point,
+            "size_gb": app_config.ramdisk_size_gb,  # 从配置文件读取
+            "current_enabled": ramdisk_mgr.enabled,  # 当前运行状态
+            "current_size_gb": ramdisk_mgr.size_gb,  # 当前运行容量
+        })
+
+    @app.post("/api/ramdisk/unmount")
+    def unmount_ramdisk() -> Any:
+        """卸载虚拟硬盘"""
+        ramdisk_mgr = get_ramdisk_manager()
+        success = ramdisk_mgr.unmount()
+        if success:
+            return jsonify({"status": "ok", "message": "虚拟硬盘已卸载"})
+        else:
+            return jsonify({"status": "error", "message": "卸载虚拟硬盘失败"}), 500
+
+    @app.post("/api/ramdisk/reset-size")
+    def reset_ramdisk_size() -> Any:
+        """重置虚拟硬盘容量"""
+        payload = request.get_json(silent=True) or {}
+        try:
+            new_size_gb = int(payload.get("size_gb", 10))
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "容量参数无效"}), 400
+        
+        if new_size_gb < 1 or new_size_gb > 64:
+            return jsonify({"status": "error", "message": "容量必须在1-64GB之间"}), 400
+        
+        ramdisk_mgr = get_ramdisk_manager()
+        success = ramdisk_mgr.reset_size(new_size_gb)
+        if success:
+            # 保存配置
+            app_config = get_app_config()
+            app_config.ramdisk_size_gb = new_size_gb
+            app_config.save()
+            
+            return jsonify({
+                "status": "ok", 
+                "message": f"虚拟硬盘容量已重置为{new_size_gb}GB",
+                "size_gb": new_size_gb,
+                "mount_point": ramdisk_mgr.mount_point
+            })
+        else:
+            return jsonify({"status": "error", "message": "重置虚拟硬盘容量失败"}), 500
+
+    @app.post("/api/ramdisk/save-config")
+    def save_ramdisk_config() -> Any:
+        """保存虚拟硬盘配置(仅保存,不应用)"""
+        payload = request.get_json(silent=True) or {}
+        
+        try:
+            enabled = payload.get("enabled")
+            if enabled is not None:
+                if isinstance(enabled, str):
+                    enabled = enabled.lower() in ("true", "1", "yes")
+                enabled = bool(enabled)
+            
+            size_gb = payload.get("size_gb")
+            if size_gb is not None:
+                size_gb = int(size_gb)
+                if size_gb < 1 or size_gb > 64:
+                    return jsonify({"status": "error", "message": "容量必须在1-64GB之间"}), 400
+        except (TypeError, ValueError) as e:
+            return jsonify({"status": "error", "message": f"参数无效: {e}"}), 400
+        
+        # 保存配置
+        app_config = get_app_config()
+        if enabled is not None:
+            app_config.ramdisk_enabled = enabled
+        if size_gb is not None:
+            app_config.ramdisk_size_gb = size_gb
+        
+        try:
+            app_config.save()
+            return jsonify({
+                "status": "ok",
+                "message": "配置已保存,重启应用后生效",
+                "config": {
+                    "enabled": app_config.ramdisk_enabled,
+                    "size_gb": app_config.ramdisk_size_gb
+                }
+            })
+        except Exception as e:
+            LOGGER.error("保存配置失败: %s", e)
+            return jsonify({"status": "error", "message": f"保存配置失败: {e}"}), 500
+
+    @app.post("/api/ramdisk/apply-config")
+    def apply_ramdisk_config() -> Any:
+        """保存并立即应用虚拟硬盘配置"""
+        payload = request.get_json(silent=True) or {}
+        
+        try:
+            enabled = payload.get("enabled")
+            if enabled is not None:
+                if isinstance(enabled, str):
+                    enabled = enabled.lower() in ("true", "1", "yes")
+                enabled = bool(enabled)
+            else:
+                return jsonify({"status": "error", "message": "缺少enabled参数"}), 400
+            
+            size_gb = payload.get("size_gb")
+            if size_gb is not None:
+                size_gb = int(size_gb)
+                if size_gb < 1 or size_gb > 64:
+                    return jsonify({"status": "error", "message": "容量必须在1-64GB之间"}), 400
+            else:
+                size_gb = 10
+        except (TypeError, ValueError) as e:
+            return jsonify({"status": "error", "message": f"参数无效: {e}"}), 400
+        
+        # 保存配置
+        app_config = get_app_config()
+        app_config.ramdisk_enabled = enabled
+        app_config.ramdisk_size_gb = size_gb
+        
+        try:
+            app_config.save()
+        except Exception as e:
+            LOGGER.error("保存配置失败: %s", e)
+            return jsonify({"status": "error", "message": f"保存配置失败: {e}"}), 500
+        
+        # 立即应用配置
+        ramdisk_mgr = get_ramdisk_manager()
+        
+        if enabled:
+            # 启用虚拟硬盘
+            if ramdisk_mgr.mount_point:
+                # 已挂载,检查容量是否需要调整
+                if ramdisk_mgr.size_gb != size_gb:
+                    LOGGER.info("虚拟硬盘容量变更: %dGB -> %dGB", ramdisk_mgr.size_gb, size_gb)
+                    success = ramdisk_mgr.reset_size(size_gb)
+                    if not success:
+                        return jsonify({"status": "error", "message": "调整虚拟硬盘容量失败"}), 500
+                    ramdisk_mgr.ensure_directories()
+                    message = f"虚拟硬盘容量已调整为{size_gb}GB"
+                else:
+                    message = f"虚拟硬盘已启用 ({ramdisk_mgr.mount_point}, {size_gb}GB)"
+            else:
+                # 未挂载,创建虚拟硬盘
+                ramdisk_mgr.enabled = True
+                ramdisk_mgr.size_gb = size_gb
+                success = ramdisk_mgr.initialize()
+                if success:
+                    ramdisk_mgr.ensure_directories()
+                    message = f"虚拟硬盘已创建并挂载 ({ramdisk_mgr.mount_point}, {size_gb}GB)"
+                else:
+                    return jsonify({"status": "error", "message": "创建虚拟硬盘失败"}), 500
+            
+            # 更新应用配置中的路径
+            new_uploads_dir = ramdisk_mgr.get_uploads_dir()
+            new_tasks_dir = ramdisk_mgr.get_tasks_dir()
+            new_uploads_dir.mkdir(parents=True, exist_ok=True)
+            new_tasks_dir.mkdir(parents=True, exist_ok=True)
+            
+            from flask import current_app
+            current_app.config["SUBTITLE_CUT_UPLOAD_DIR"] = new_uploads_dir
+            
+            # 更新TaskManager的工作目录
+            task_manager = _get_task_manager()
+            task_manager.update_working_dir(new_tasks_dir)
+            
+            # 输出新的路径信息
+            LOGGER.info("=" * 80)
+            LOGGER.info("虚拟硬盘已启用")
+            LOGGER.info("Uploads目录: %s", new_uploads_dir)
+            LOGGER.info("Tasks目录: %s", new_tasks_dir)
+            LOGGER.info("=" * 80)
+        else:
+            # 禁用虚拟硬盘
+            if ramdisk_mgr.mount_point:
+                success = ramdisk_mgr.unmount()
+                if success:
+                    ramdisk_mgr.enabled = False
+                    message = "虚拟硬盘已卸载并禁用"
+                else:
+                    return jsonify({"status": "error", "message": "卸载虚拟硬盘失败"}), 500
+            else:
+                ramdisk_mgr.enabled = False
+                message = "虚拟硬盘已禁用"
+            
+            # 更新应用配置中的路径(切换到本地)
+            new_uploads_dir = ramdisk_mgr.get_uploads_dir()
+            new_tasks_dir = ramdisk_mgr.get_tasks_dir()
+            new_uploads_dir.mkdir(parents=True, exist_ok=True)
+            new_tasks_dir.mkdir(parents=True, exist_ok=True)
+            
+            from flask import current_app
+            current_app.config["SUBTITLE_CUT_UPLOAD_DIR"] = new_uploads_dir
+            
+            # 更新TaskManager的工作目录
+            task_manager = _get_task_manager()
+            task_manager.update_working_dir(new_tasks_dir)
+            
+            # 输出降级后的路径信息
+            LOGGER.info("=" * 80)
+            LOGGER.info("虚拟硬盘已禁用,使用本地存储")
+            LOGGER.info("Uploads目录: %s", new_uploads_dir)
+            LOGGER.info("Tasks目录: %s", new_tasks_dir)
+            LOGGER.info("=" * 80)
+        
+        return jsonify({
+            "status": "ok",
+            "message": message,
+            "config": {
+                "enabled": enabled,
+                "size_gb": size_gb,
+                "mounted": ramdisk_mgr.mount_point is not None,
+                "mount_point": ramdisk_mgr.mount_point
+            }
+        })
+
     return app
 
 
@@ -783,8 +1157,9 @@ def _get_task_manager() -> TaskManager:
 
 
 def _get_upload_dir() -> Path:
+    """获取上传目录"""
     from flask import current_app
-
+    
     upload_dir = current_app.config.get("SUBTITLE_CUT_UPLOAD_DIR")
     if upload_dir is None:
         raise RuntimeError("上传目录尚未初始化")

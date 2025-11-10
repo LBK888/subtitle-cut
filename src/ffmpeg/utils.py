@@ -42,6 +42,13 @@ def run_ffmpeg(
     duration = progress_duration if progress_duration and progress_duration > 0 else None
     stderr_lines: list[str] = []
     time_pattern = re.compile(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)")
+    
+    import logging
+    LOGGER = logging.getLogger(__name__)
+    if duration:
+        LOGGER.debug("FFmpeg progress tracking enabled: duration=%.2fs", duration)
+    else:
+        LOGGER.debug("FFmpeg progress tracking disabled: no duration provided")
 
     process = subprocess.Popen(
         command,

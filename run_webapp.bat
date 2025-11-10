@@ -1,3 +1,4 @@
+set PYTHONUNBUFFERED=1
 @echo off
 setlocal
 title Subtitle-Cut Launcher
@@ -42,6 +43,9 @@ if not exist "third_party\ffmpeg\bin\ffmpeg.exe" (
 
 rem 6) launch web app
 echo [INFO] Launching Subtitle-Cut Web App...
+echo [INFO] Enabling detailed logging...
+set PYTHONUNBUFFERED=1
+set LOG_LEVEL=DEBUG
 start "" "http://127.0.0.1:5000/"
 python -m src.webapp.app
 

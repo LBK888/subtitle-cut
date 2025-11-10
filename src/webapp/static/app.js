@@ -1,4 +1,4 @@
-﻿import { buildSegmentTokens } from "./transcript-utils.js";
+import { buildSegmentTokens } from "./transcript-utils.js";
 import { TimelineController } from "./timeline.js";
 
 const state = {
@@ -276,6 +276,10 @@ function cacheDom() {
   dom.commonFillersClose = document.querySelector("#common-fillers-close");
   dom.commonFillersSave = document.querySelector("#common-fillers-save");
   dom.commonFillersInput = document.querySelector("#common-fillers-input");
+  dom.ramdiskEnabled = document.querySelector("#ramdisk-enabled");
+  dom.ramdiskSizeGb = document.querySelector("#ramdisk-size-gb");
+  dom.ramdiskSaveConfig = document.querySelector("#ramdisk-save-config");
+  dom.ramdiskStatus = document.querySelector("#ramdisk-status");
   dom.snapshotPanel = document.querySelector("#snapshot-panel");
   dom.snapshotBackdrop = document.querySelector("#snapshot-backdrop");
   dom.snapshotList = document.querySelector("#snapshot-list");
@@ -500,6 +504,9 @@ function bindEvents() {
   if (dom.snapshotList) {
     dom.snapshotList.addEventListener("click", handleSnapshotAction);
   }
+  if (dom.ramdiskSaveConfig) {
+    dom.ramdiskSaveConfig.addEventListener("click", handleRamdiskSaveConfig);
+  }
   dom.menus?.forEach((menu) => {
     const trigger = menu.querySelector(".menu-trigger");
     if (!trigger) return;
@@ -548,8 +555,12 @@ function handleDocumentClick(event) {
   }
 }
 
-function openOptionsPanel() {
+async function openOptionsPanel() {
   if (!dom.optionsPanel) return;
+  
+  // 加载虚拟硬盘状态
+  await loadRamdiskStatus();
+  
   dom.optionsPanel.classList.add("open");
   dom.optionsPanel.setAttribute("aria-hidden", "false");
   if (dom.optionsBackdrop) {
@@ -566,6 +577,7 @@ function closeOptionsPanel() {
   if (!dom.optionsPanel || !dom.optionsPanel.classList.contains("open")) {
     return false;
   }
+  
   dom.optionsPanel.classList.remove("open");
   dom.optionsPanel.setAttribute("aria-hidden", "true");
   if (dom.optionsBackdrop) {
@@ -3325,13 +3337,16 @@ async function handleUploadAndTranscribe(event) {
     }
     const engine = dom.engineSelect?.value || "paraformer";
     const model = dom.modelSelect?.value || "paraformer-zh";
-    // END-EDIT
     const device = dom.deviceSelect?.value || "auto";
+    const presplitMode = document.querySelector("#import-presplit-mode")?.value || "auto";
+    const presplitSegments = parseInt(document.querySelector("#presplit-segments")?.value || "10");
     const taskPayload = {
       media_path: mediaPath,
       engine,
       model,
       device,
+      presplit_mode: presplitMode,
+      presplit_segments: presplitSegments,
     };
 
     const taskResponse = await fetch("/api/tasks/transcribe", {
@@ -4049,12 +4064,95 @@ function formatTime(seconds) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+// 虚拟硬盘管理函数
+async function loadRamdiskStatus() {
+  try {
+    const response = await fetch("/api/ramdisk/status");
+    if (!response.ok) {
+      console.warn("无法加载虚拟硬盘状态");
+      return;
+    }
+    
+    const data = await response.json();
+    
+    // 更新UI - 显示配置文件中的值
+    if (dom.ramdiskEnabled) {
+      dom.ramdiskEnabled.value = data.enabled ? "true" : "false";
+    }
+    if (dom.ramdiskSizeGb) {
+      dom.ramdiskSizeGb.value = data.size_gb || 10;
+    }
+    
+    // 更新状态显示
+    if (dom.ramdiskStatus) {
+      if (data.mounted) {
+        dom.ramdiskStatus.textContent = `当前状态: 已挂载 (${data.mount_point}, ${data.current_size_gb}GB)`;
+        dom.ramdiskStatus.style.color = "#10b981";
+      } else if (data.enabled) {
+        dom.ramdiskStatus.textContent = "当前状态: 未挂载";
+        dom.ramdiskStatus.style.color = "#f59e0b";
+      } else {
+        dom.ramdiskStatus.textContent = "当前状态: 已禁用";
+        dom.ramdiskStatus.style.color = "var(--muted)";
+      }
+    }
+  } catch (error) {
+    console.warn("加载虚拟硬盘状态失败", error);
+  }
+}
 
+async function handleRamdiskSaveConfig() {
+  if (!dom.ramdiskEnabled || !dom.ramdiskSizeGb) {
+    logError(new Error("虚拟硬盘配置元素未找到"));
+    return;
+  }
 
+  try {
+    if (dom.ramdiskSaveConfig) {
+      dom.ramdiskSaveConfig.disabled = true;
+      dom.ramdiskSaveConfig.textContent = "应用中...";
+    }
+    if (dom.ramdiskStatus) {
+      dom.ramdiskStatus.textContent = "正在应用配置...";
+      dom.ramdiskStatus.style.color = "#3b82f6";
+    }
 
+    const enabled = dom.ramdiskEnabled.value === "true";
+    const sizeGb = parseInt(dom.ramdiskSizeGb.value, 10);
 
+    if (!Number.isFinite(sizeGb) || sizeGb < 1 || sizeGb > 64) {
+      logError(new Error("虚拟硬盘容量必须在1-64GB之间"));
+      return;
+    }
 
+    const response = await fetch("/api/ramdisk/apply-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled, size_gb: sizeGb }),
+    });
 
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || `应用配置失败 (${response.status})`);
+    }
+
+    logInfo(data.message || `虚拟硬盘配置已应用: ${enabled ? "启用" : "禁用"}, ${sizeGb}GB`);
+    
+    // 重新加载状态
+    await loadRamdiskStatus();
+  } catch (error) {
+    logError(error instanceof Error ? error : new Error(String(error)));
+    if (dom.ramdiskStatus) {
+      dom.ramdiskStatus.textContent = "应用失败";
+      dom.ramdiskStatus.style.color = "#ef4444";
+    }
+  } finally {
+    if (dom.ramdiskSaveConfig) {
+      dom.ramdiskSaveConfig.disabled = false;
+      dom.ramdiskSaveConfig.textContent = "保存并应用";
+    }
+  }
+}
 
 
 

@@ -44,6 +44,29 @@ def transcribe_to_json(
     engine_key = (config.engine or "whisperx").strip().lower()
     _emit(0.1)
 
+    return _transcribe_with_bundle(bundle, media_path, engine=engine_key, progress_callback=_emit)
+
+
+def _transcribe_with_bundle(
+    bundle: Any,
+    input_media: PathLike,
+    *,
+    engine: str = "whisperx",
+    progress_callback: Callable[[float], None] | None = None,
+) -> Transcript:
+    """使用已加载的模型bundle执行转录（避免重复加载模型）"""
+    
+    def _emit(progress: float) -> None:
+        if progress_callback is None:
+            return
+        progress_callback(max(0.0, min(1.0, progress)))
+    
+    media_path = Path(input_media)
+    if not media_path.exists():
+        raise FileNotFoundError(f"Input media not found: {media_path}")
+    
+    engine_key = (engine or "whisperx").strip().lower()
+
     if engine_key == "whisperx":
         if not isinstance(bundle, ModelBundle):
             raise RuntimeError("WhisperX 加载失败，ModelBundle 不可用。")

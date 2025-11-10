@@ -66,7 +66,7 @@
 <div class="operation-strip__status operation-strip__status--fixed">
 <span class="task-status" id="cut-status"></span>
 </div>
-<button class="ghost-button sidebar-button operation-strip__secondary" id="menu-open-options" type="button">编码设置</button>
+<button class="ghost-button sidebar-button operation-strip__secondary" id="menu-open-options" type="button">选项设置</button>
 </form>
 </section>
 </aside>
@@ -149,9 +149,21 @@
 <select id="cut-reencode">
 <option value="auto">自动选择</option>
 <option value="copy">直接拷贝</option>
-<option selected="" value="nvenc">NVIDIA NVENC</option>
-<option value="reencode">强制重新编码</option>
+<option selected="" value="nvenc">NVIDIA NVENC (GPU)</option>
+<option value="reencode">CPU编码 (libx264)</option>
 </select>
+</label>
+<label class="options-field">
+<span>导入时预分割</span>
+<select id="import-presplit-mode">
+<option selected="" value="auto">自动（20分钟以上启用）</option>
+<option value="disabled">禁用（不分割）</option>
+<option value="custom">自定义段数</option>
+</select>
+</label>
+<label class="options-field" id="presplit-segments-field" style="display:none;">
+<span>分割段数</span>
+<input id="presplit-segments" min="2" step="1" type="number" value="10"/>
 </label>
 <label class="options-field">
 <span>零交叉吸附</span>
@@ -168,6 +180,29 @@
 <span>剪辑批次大小</span>
 <input id="cut-chunk-size" min="1" step="1" type="number" value="20"/>
 </label>
+<div class="options-field options-field--full">
+<span style="font-weight: 600; font-size: 1rem;">虚拟硬盘设置</span>
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
+<label style="display: flex; flex-direction: column; gap: 6px;">
+<span style="font-size: 0.85rem; color: var(--muted);">启用状态</span>
+<select id="ramdisk-enabled" style="padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--fg);">
+<option value="true">启用</option>
+<option value="false">禁用</option>
+</select>
+</label>
+<label style="display: flex; flex-direction: column; gap: 6px;">
+<span style="font-size: 0.85rem; color: var(--muted);">容量 (GB)</span>
+<input id="ramdisk-size-gb" min="1" max="64" step="1" type="number" value="10" style="padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--fg);"/>
+</label>
+</div>
+<div style="display: flex; gap: 8px; margin-top: 12px; align-items: center;">
+<button class="primary-button" id="ramdisk-save-config" type="button">保存并应用</button>
+<span id="ramdisk-status" style="font-size: 0.85rem; color: var(--muted);"></span>
+</div>
+<div style="font-size: 12px; color: #888; margin-top: 8px; line-height: 1.5;">
+点击"保存并应用"后立即生效：启用时会创建虚拟硬盘，禁用时会卸载虚拟硬盘
+</div>
+</div>
 </form>
 </div>
 </div>
@@ -225,5 +260,6 @@
 </div>
 </div>
 <script src="{{ url_for('static', filename='app.js') }}" type="module"></script>
+<script src="{{ url_for('static', filename='presplit-options.js') }}"></script>
 </body>
 </html>

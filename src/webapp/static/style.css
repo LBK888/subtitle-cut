@@ -1618,8 +1618,9 @@ button:disabled {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 420px;
+  width: 860px;
   max-width: calc(100% - 48px);
+  max-height: calc(100vh - 48px);
   background: var(--surface-elevated);
   border: 1px solid var(--border);
   border-radius: 20px;
@@ -1628,6 +1629,7 @@ button:disabled {
   z-index: 40;
   flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
 }
 
 .options-panel.open {
@@ -1655,6 +1657,14 @@ button:disabled {
   color: var(--muted);
 }
 
+.options-field--full {
+  grid-column: 1 / -1;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
 .options-field select,
 .options-field input {
   padding: 8px 12px;
@@ -1665,9 +1675,19 @@ button:disabled {
 }
 
 .options-panel__body form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 24px;
+}
+
+@media (max-width: 900px) {
+  .options-panel {
+    width: 420px;
+  }
+  
+  .options-panel__body form {
+    grid-template-columns: 1fr;
+  }
 }
 
 .common-fillers-backdrop {
@@ -1943,16 +1963,6 @@ button:disabled {
 
 .manuscript-actions {
   margin-left: auto;
-}
-
-bottom: 12px;
-  left: 16px;
-  right: 16px;
-  margin-top: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
 }
 
 .manuscript-footer {

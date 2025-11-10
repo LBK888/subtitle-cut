@@ -149,15 +149,63 @@ def derive_keep_ranges(
     candidate.sort(key=lambda rng: (rng.start, rng.end))
     gap = max(merge_gap, 0.0)
     merged: List[TimeRange] = []
+    
+    def _has_delete_overlap(start: float, end: float) -> bool:
+        """检查指定区间是否与任何删除区间重叠"""
+        for delete_rng in normalized_deletes:
+            if delete_rng.start < end and delete_rng.end > start:
+                return True
+        return False
+    
     for rng in candidate:
         if not merged:
             merged.append(TimeRange(start=rng.start, end=rng.end))
             continue
         prev = merged[-1]
+        # 只有在间隔小于gap且合并后的整个区间都不与删除区间重叠时才合并
         if rng.start <= prev.end + gap:
-            prev.end = max(prev.end, rng.end)
+            # 检查合并后的完整区间 [prev.start, rng.end] 是否与删除区间重叠
+            if not _has_delete_overlap(prev.start, rng.end):
+                prev.end = max(prev.end, rng.end)
+            else:
+                merged.append(TimeRange(start=rng.start, end=rng.end))
         else:
             merged.append(TimeRange(start=rng.start, end=rng.end))
+    
+    # 验证：确保合并后的区间不包含任何删除区间
+    for merged_rng in merged:
+        for delete_rng in normalized_deletes:
+            # 检查是否有重叠
+            if delete_rng.start < merged_rng.end and delete_rng.end > merged_rng.start:
+                # 发现重叠！这不应该发生
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(
+                    "CRITICAL: Merged range [%.2f-%.2f] overlaps with delete range [%.2f-%.2f]!",
+                    merged_rng.start,
+                    merged_rng.end,
+                    delete_rng.start,
+                    delete_rng.end,
+                )
+                raise RuntimeError(
+                    f"Merge validation failed: keep range [{merged_rng.start}-{merged_rng.end}] "
+                    f"overlaps with delete range [{delete_rng.start}-{delete_rng.end}]"
+                )
+    
+    # 记录合并效果
+    import logging
+    logger = logging.getLogger(__name__)
+    if len(candidate) > len(merged):
+        logger.info(
+            "Merged keep ranges: %d candidate ranges -> %d merged ranges (merge_gap=%.2fs, reduction=%.1f%%)",
+            len(candidate),
+            len(merged),
+            gap,
+            (1 - len(merged) / len(candidate)) * 100,
+        )
+    
+    logger.info("Merge validation passed: no overlap with delete ranges")
+    
     return merged
 
 

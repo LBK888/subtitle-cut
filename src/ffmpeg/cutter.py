@@ -53,22 +53,58 @@ _DEFAULT_AUDIO_PROFILE = ".mp3"
 
 
 def probe_media_streams(input_path: PathLike, ffmpeg_binary: str) -> tuple[bool, bool]:
+    """探测媒体文件的流类型
+    
+    优先根据文件扩展名判断,避免误识别(如音频文件的封面图片被识别为视频流)
+    """
+    input_path_obj = Path(input_path)
+    file_ext = input_path_obj.suffix.lower()
+    
+    # 定义音频和视频扩展名
+    audio_extensions = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".wma", ".opus", ".ape", ".alac"}
+    video_extensions = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".mpg", ".mpeg", ".ts"}
+    
+    # 根据扩展名硬性判定
+    if file_ext in audio_extensions:
+        # 音频文件:只有音频,没有视频
+        import sys
+        print(f"[PROBE] {input_path_obj.name} identified as AUDIO-ONLY (extension: {file_ext})", file=sys.stderr, flush=True)
+        LOGGER.info("probe_media_streams: %s identified as audio-only by extension", input_path_obj.name)
+        return False, True
+    
+    if file_ext in video_extensions:
+        # 视频文件:默认有视频和音频(即使没有音频也无妨)
+        LOGGER.info("probe_media_streams: %s identified as video by extension", input_path_obj.name)
+        return True, True
+    
+    # 未知扩展名,使用FFmpeg探测
+    LOGGER.info("probe_media_streams: %s has unknown extension, using FFmpeg detection", input_path_obj.name)
     command = [ffmpeg_binary, "-hide_banner", "-i", str(input_path)]
     result = subprocess.run(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
+        encoding="utf-8",
+        errors="replace",
     )
-    output = b""
+    output = ""
     if result.stderr:
         output += result.stderr
     if result.stdout:
         output += result.stdout
-    text = output.decode("utf-8", errors="ignore")
+    text = output
     matches = _STREAM_KIND_RE.findall(text)
     has_video = any(kind.lower() == "video" for kind in matches)
     has_audio = any(kind.lower() == "audio" for kind in matches)
+    
+    LOGGER.info(
+        "probe_media_streams: %s -> video=%s, audio=%s (detected by FFmpeg)",
+        input_path_obj.name,
+        has_video,
+        has_audio,
+    )
+    
     return has_video, has_audio
 
 
@@ -101,7 +137,8 @@ def _probe_average_frame_rate(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     except FileNotFoundError:
         return None
@@ -381,16 +418,18 @@ def _remux_ts_chunks(ffmpeg_binary: str, chunks: Sequence[bytes], output_path: P
         "aac_adtstoasc",
         str(output_path),
     ]
-    result = subprocess.run(
+    # 注意: input是二进制数据,但stderr需要文本模式
+    process = subprocess.Popen(
         command,
-        input=ts_stream,
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        check=False,
     )
-    if result.returncode != 0:
-        stderr_text = result.stderr.decode("utf-8", errors="replace") if result.stderr else None
-        raise subprocess.CalledProcessError(result.returncode, command, stderr=stderr_text)
+    stdout_data, stderr_data = process.communicate(input=ts_stream)
+    
+    if process.returncode != 0:
+        stderr_text = stderr_data.decode("utf-8", errors="replace") if stderr_data else None
+        raise subprocess.CalledProcessError(process.returncode, command, stderr=stderr_text)
 
 
 def _execute_chunked_cut(
@@ -583,6 +622,25 @@ def cut_video(
         progress_callback(max(0.0, min(1.0, value)))
 
     _emit_progress(0.0)
+    
+    # ==================== 关键修复：根据输出文件扩展名预判类型 ====================
+    output_path_obj = Path(output_path)
+    output_suffix = output_path_obj.suffix.lower()
+    
+    # 定义音频输出扩展名
+    audio_output_extensions = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".wma", ".opus"}
+    # 定义视频输出扩展名
+    video_output_extensions = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".mpg", ".mpeg", ".ts"}
+    
+    is_audio_output = output_suffix in audio_output_extensions
+    is_video_output = output_suffix in video_output_extensions
+    
+    LOGGER.info(
+        "Output file type detection: %s -> audio_output=%s, video_output=%s",
+        output_suffix,
+        is_audio_output,
+        is_video_output,
+    )
 
     keep_list = [rng for rng in keep_ranges if rng[1] > rng[0]]
     if not keep_list:
@@ -652,9 +710,22 @@ def cut_video(
         else:
             if chunk_size_value < 2:
                 chunk_size_value = 0
-
-    output_path_obj = Path(output_path)
-    output_suffix = output_path_obj.suffix.lower()
+    
+    # 智能调整chunk_size:对于长文件,自动使用更小的chunk_size
+    if chunk_size_value > 0 and total_keep_duration > 3600:  # 超过1小时
+        # 确保每个分块不超过15分钟
+        max_duration_per_chunk = 900  # 15分钟
+        estimated_duration_per_range = total_keep_duration / len(keep_list) if keep_list else 0
+        if estimated_duration_per_range > 0:
+            optimal_chunk_size = max(2, int(max_duration_per_chunk / estimated_duration_per_range))
+            if optimal_chunk_size < chunk_size_value:
+                LOGGER.info(
+                    "Auto-adjusting chunk_size from %d to %d for long file (%.1f minutes)",
+                    chunk_size_value,
+                    optimal_chunk_size,
+                    total_keep_duration / 60,
+                )
+                chunk_size_value = optimal_chunk_size
 
     frame_rate_expr: Optional[str] = None
     if forced_streams is not None:
@@ -678,25 +749,121 @@ def cut_video(
     if has_video:
         frame_rate_expr = _probe_average_frame_rate(input_path, ffmpeg_binary)
 
-    audio_profile = None
-    if not has_video and has_audio:
+    # ==================== 音频输出专用处理路径（完全独立） ====================
+    # 如果输出文件是音频格式，直接进入音频专用处理逻辑
+    if is_audio_output:
+        import sys
+        print("=" * 80, file=sys.stderr, flush=True)
+        print("AUDIO OUTPUT DETECTED - Using optimized audio processing", file=sys.stderr, flush=True)
+        print(f"Output: {output_suffix}, Ranges: {len(keep_list)}, Duration: {total_keep_duration / 60:.1f} min", file=sys.stderr, flush=True)
+        print("=" * 80, file=sys.stderr, flush=True)
+        
+        LOGGER.info("=" * 80)
+        LOGGER.info("AUDIO OUTPUT DETECTED - Using optimized audio processing")
+        LOGGER.info("Output: %s, Ranges: %d, Duration: %.1f min", output_suffix, len(keep_list), total_keep_duration / 60)
+        LOGGER.info("=" * 80)
+        
         audio_profile = _AUDIO_OUTPUT_PROFILES.get(output_suffix)
         if audio_profile is None:
             audio_profile = _AUDIO_OUTPUT_PROFILES[_DEFAULT_AUDIO_PROFILE]
             LOGGER.warning("unknown audio extension %s, defaulting to mp3 encoding", output_suffix)
-
+        
+        # 对于纯音频,根据区间数量选择合适的剪辑策略
+        # 注意：不使用物理分割策略，因为会破坏ASR时间戳的准确性
+        if len(keep_list) >= 2:
+            # 根据区间数量选择策略
+            if len(keep_list) > 100:
+                # 大量区间：使用单个filter_complex一次性处理
+                print("=" * 80, file=sys.stderr, flush=True)
+                print("USING SINGLE FILTER_COMPLEX - FOR MANY RANGES", file=sys.stderr, flush=True)
+                print(f"File duration: {total_keep_duration / 60:.1f} minutes, {len(keep_list)} ranges", file=sys.stderr, flush=True)
+                print("Strategy: Single FFmpeg call with filter_complex (no startup overhead)", file=sys.stderr, flush=True)
+                print("=" * 80, file=sys.stderr, flush=True)
+                
+                LOGGER.warning("=" * 80)
+                LOGGER.warning("USING SINGLE FILTER_COMPLEX - FOR MANY RANGES")
+                LOGGER.warning("File duration: %.1f minutes, %d ranges", total_keep_duration / 60, len(keep_list))
+                LOGGER.warning("Strategy: Single FFmpeg call with filter_complex")
+                LOGGER.warning("=" * 80)
+                
+                from .inverse_audio_cutter import inverse_cut_audio
+                
+                _emit_progress(0.1)
+                inverse_cut_audio(
+                    Path(input_path),
+                    Path(output_path),
+                    keep_list,
+                    ffmpeg_binary=ffmpeg_binary,
+                    audio_codec="libmp3lame",
+                    audio_bitrate="192k",
+                    progress_callback=progress_callback,
+                )
+                _emit_progress(1.0)
+                return None
+            else:
+                # 少量大区间：使用简单剪辑策略
+                print("=" * 80, file=sys.stderr, flush=True)
+                print("USING SIMPLIFIED AUDIO CUTTER - OPTIMIZED FOR RAM DISK", file=sys.stderr, flush=True)
+                print(f"File duration: {total_keep_duration / 60:.1f} minutes, {len(keep_list)} ranges", file=sys.stderr, flush=True)
+                print("Strategy: Direct parallel extraction (preserves ASR timestamp accuracy)", file=sys.stderr, flush=True)
+                print("=" * 80, file=sys.stderr, flush=True)
+                
+                LOGGER.warning("=" * 80)
+                LOGGER.warning("USING SIMPLIFIED AUDIO CUTTER - OPTIMIZED FOR RAM DISK")
+                LOGGER.warning("File duration: %.1f minutes, %d ranges", total_keep_duration / 60, len(keep_list))
+                LOGGER.warning("Strategy: Direct parallel extraction (preserves ASR timestamp accuracy)")
+                LOGGER.warning("=" * 80)
+                
+                from .simple_audio_cutter import simple_cut_audio
+                
+                _emit_progress(0.1)
+                simple_cut_audio(
+                    Path(input_path),
+                    Path(output_path),
+                    keep_list,
+                    ffmpeg_binary=ffmpeg_binary,
+                    audio_codec="libmp3lame",
+                    audio_bitrate="192k",
+                    progress_callback=progress_callback,
+                )
+                _emit_progress(1.0)
+                return None
+        else:
+            # 只有1个区间，使用传统方法（filter_complex）
+            LOGGER.info("Only 1 range, using traditional filter_complex method for audio")
+            # 继续往下执行，使用传统的filter_complex处理
+            # 注意：这里不return，让它继续执行后面的通用逻辑
+            pass
+        
+        # 为音频输出准备audio_profile（用于后续的传统处理路径）
+        # 这个分支只在单区间或其他特殊情况下才会执行到
+        audio_profile = _AUDIO_OUTPUT_PROFILES.get(output_suffix)
+        if audio_profile is None:
+            audio_profile = _AUDIO_OUTPUT_PROFILES[_DEFAULT_AUDIO_PROFILE]
+    
+    # ==================== 视频输出专用处理路径（完全独立） ====================
+    # 从这里开始是视频处理逻辑，音频输出已经在上面处理完并返回了
+    
     if codec == "nvenc" and has_video and len(keep_list) > 1 and xfade_ms > 0.0:
         encoder_note = NVENC_XFADE_FALLBACK_NOTE
         LOGGER.warning(encoder_note)
         codec = "auto"
 
-    use_chunk = (
+    # 视频多线程分块处理判断（恢复旧版本的简洁逻辑）
+    use_video_chunk = (
         has_video
         and chunk_size_value >= 2
         and len(keep_list) > chunk_size_value
         and xfade_ms <= 0.0
     )
-    if use_chunk:
+    
+    if use_video_chunk:
+        LOGGER.info(
+            "Video multi-threading ENABLED: ranges=%d, chunk_size=%d, duration=%.1f min",
+            len(keep_list),
+            chunk_size_value,
+            total_keep_duration / 60,
+        )
         _emit_progress(0.2)
         _execute_chunked_cut(
             input_path,
@@ -718,6 +885,7 @@ def cut_video(
         _emit_progress(1.0)
         return encoder_note
 
+    # 非分块处理：使用传统的filter_complex方式
     _emit_progress(0.2)
 
     plan = _create_filter_plan(
@@ -730,6 +898,15 @@ def cut_video(
     )
 
     _emit_progress(0.25)
+    
+    # 确保audio_profile已定义（用于纯音频单区间的情况）
+    # 注意：如果前面is_audio_output分支已经设置过，这里不会重复设置
+    if not has_video and has_audio:
+        if 'audio_profile' not in locals():
+            audio_profile = _AUDIO_OUTPUT_PROFILES.get(output_suffix)
+            if audio_profile is None:
+                audio_profile = _AUDIO_OUTPUT_PROFILES[_DEFAULT_AUDIO_PROFILE]
+                LOGGER.warning("unknown audio extension %s, defaulting to mp3 encoding", output_suffix)
 
     last_error: subprocess.CalledProcessError | None = None
     ffmpeg_start = 0.25
