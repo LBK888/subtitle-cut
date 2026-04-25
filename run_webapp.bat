@@ -15,7 +15,7 @@ cd /d "%~dp0"
 rem 2) set ModelScope cache to the project root
 set "MODELSCOPE_CACHE=%~dp0"
 
-rem 3) ensure virtual environment exists (Python 3.11 enforced in install.bat)
+rem 3) ensure virtual environment exists (Python 3.10-3.12 enforced in install.bat)
 if not exist ".venv\Scripts\python.exe" (
     echo [INFO] Virtual environment not found. Running install.bat ...
     if exist "install.bat" (
