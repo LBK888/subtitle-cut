@@ -9,7 +9,6 @@ AI-powered subtitle cutting tool with **character-level precision** and Paraform
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg?logo=python)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![OS](https://img.shields.io/badge/Platform-Windows-blue.svg?logo=windows)](https://github.com/foxmooner2021/subtitle-cut)
-[![GPU Support](https://img.shields.io/badge/GPU-CUDA%2011.8%20%2B%20cuDNN%208.9-orange.svg?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit-archive)
 
 ---
 
@@ -19,6 +18,11 @@ AI-powered subtitle cutting tool with **character-level precision** and Paraform
 </div>
 
 ---
+## Updates from this fork:  
+- using Qwen3-ASR model for better voice-2-text results
+- better english subtitle editing support
+- python 3.8+ and cuda 12.8 ~ 13.x supported 
+
 
 ## ✨ 项目简介 | Overview
 
