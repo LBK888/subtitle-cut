@@ -38,7 +38,7 @@ def cli(ctx: click.Context, ffmpeg_binary: str) -> None:
 @click.option("--input", "input_path", required=True, type=click.Path(path_type=Path))
 @click.option(
     "--engine",
-    type=click.Choice(["whisperx", "paraformer"]),
+    type=click.Choice(["whisperx", "qwen3-asr"]),
     default="whisperx",
     show_default=True,
 )
@@ -164,7 +164,7 @@ def cut(
 @click.option("--output", "output_path", required=True, type=click.Path(path_type=Path))
 @click.option(
     "--engine",
-    type=click.Choice(["whisperx", "paraformer"]),
+    type=click.Choice(["whisperx", "qwen3-asr"]),
     default="whisperx",
     show_default=True,
 )
