@@ -100,16 +100,52 @@ rem Step 4: upgrade pip (quiet)
 echo [INFO] Upgrading pip ...
 python -m pip install --upgrade pip >nul 2>nul
 
-rem Step 5: install dependencies
+rem Step 5: Install PyTorch dynamically based on CUDA version
+echo [INFO] Detecting CUDA version and installing PyTorch...
+echo import subprocess, re > detect_cuda.py
+echo try: >> detect_cuda.py
+echo     res = subprocess.run(['nvidia-smi'], capture_output=True, text=True) >> detect_cuda.py
+echo     m = re.search(r'CUDA Version:\s*(\d+\.\d+)', res.stdout) >> detect_cuda.py
+echo     c = float(m.group(1)) if m else 0 >> detect_cuda.py
+echo except Exception: >> detect_cuda.py
+echo     c = 0 >> detect_cuda.py
+echo print('cu130' if c^>=13.0 else 'cu128' if c^>=12.8 else 'cu126' if c^>=12.6 else 'cu124' if c^>=12.4 else 'cu121' if c^>=12.1 else 'cu118' if c^>=11.8 else 'cpu') >> detect_cuda.py
+
+python detect_cuda.py > cu_ver.txt
+set /p CU_VER=<cu_ver.txt
+del detect_cuda.py
+del cu_ver.txt
+
+echo [INFO] Target PyTorch build: %CU_VER%
+echo [INFO] Installing PyTorch...
+python -m pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/%CU_VER%
+
+rem Step 6: install other dependencies
 if exist "requirements.txt" (
     echo [INFO] Installing dependencies from requirements.txt ...
-    pip install -r requirements.txt
+    python -m pip install -r requirements.txt
     if errorlevel 1 (
         echo [WARN] Some packages failed to install. You can rerun this script later.
     )
 ) else (
     echo [WARN] requirements.txt not found. Skipping package installation.
 )
+
+rem Step 7: Check torch CUDA and install QwenASRMiniTool dependencies
+echo [INFO] Checking for torch CUDA ...
+python -c "import torch; assert torch.cuda.is_available()" > nul 2>&1
+if errorlevel 1 (
+    echo [WARN] torch with CUDA not found in this environment (likely installed CPU version).
+) else (
+    echo [OK] torch CUDA available.
+)
+
+echo [INFO] Installing QwenASRMiniTool GPU dependencies ...
+if exist "QwenASRMiniTool\requirements-gpu.txt" (
+    python -m pip install -r QwenASRMiniTool\requirements-gpu.txt
+)
+echo [INFO] Installing API Server dependencies ...
+python -m pip install uvicorn fastapi pydantic
 
 echo.
 echo ==========================================

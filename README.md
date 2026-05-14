@@ -1,7 +1,7 @@
 <div align="center">
 
 # 🎬 Subtitle-Cut (Qwen3 Edition)
-_基於 Qwen3 ASR 模型的 AI 自動字幕剪輯與語音辨識工具_
+_基於 Qwen3 ASR 模型的 AI 自動字幕剪輯與語音辨識工具_  
 AI-powered subtitle cutting and speech recognition tool based on the **Qwen3 ASR** model.
 
 ---
@@ -138,6 +138,6 @@ The source code of this project is released under the **MIT License**.
 
 <div align="center">
 
-* A modified version of [subtitle-cut] and [QwenASRMiniTool] by **kAI LBK888** 
+A modified version of [subtitle-cut] and [QwenASRMiniTool] by **kAI LBK888** 
 
 </div>

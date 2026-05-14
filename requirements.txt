@@ -1,11 +1,10 @@
---extra-index-url https://download.pytorch.org/whl/cu124
 click==8.1.8
-Flask==3.0.3
+fastapi
+uvicorn
+python-multipart
+jinja2
 pydantic==2.10.6
 numpy>=1.26.4
-torch==2.5.1+cu124
-torchaudio==2.5.1+cu124
-torchvision==0.20.1+cu124
 qwen-asr
 transformers
 onnxruntime-gpu>=1.19.2

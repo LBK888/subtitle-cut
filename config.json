@@ -1,0 +1,6 @@
+{
+  "enable_server": true,
+  "main_port": 5000,
+  "qwen_asr_port": 8001,
+  "ui_language": "zh-TW"
+}
