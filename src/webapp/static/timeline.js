@@ -17,7 +17,7 @@ export class TimelineController {
       onFocusRange,
     } = options || {};
     if (!container) {
-      throw new Error("缺少时间轴容器节点");
+      throw new Error("缺少時間軸容器節點");
     }
     this.container = container;
     this.onScrub = typeof onScrub === "function" ? onScrub : null;
@@ -48,7 +48,7 @@ export class TimelineController {
     this._buildDom();
     this._bindEvents();
     this._updateScale();
-    this.setStatus("等待转录数据");
+    this.setStatus("等待轉錄數據");
   }
 
   destroy() {
@@ -83,7 +83,7 @@ export class TimelineController {
       this.tokens = [];
       this.boundaries = [];
       this.duration = 0;
-      this.setStatus("等待转录数据");
+      this.setStatus("等待轉錄數據");
       this._updateScale();
       return;
     }
@@ -92,7 +92,7 @@ export class TimelineController {
     this.boundaries = Array.isArray(boundaries) ? boundaries.slice() : [];
     this.duration = Number.isFinite(duration) ? Math.max(duration, 0) : 0;
     if (!this.duration && !this.mediaDuration) {
-      this.setStatus("等待转录数据");
+      this.setStatus("等待轉錄數據");
     } else if (!this.waveformLoading) {
       this.setStatus("");
     }
@@ -164,7 +164,7 @@ export class TimelineController {
     if (!waveform || !waveform.values || !waveform.values.length) {
       this.waveform = null;
       this.waveformLoading = false;
-      this.setStatus(this.duration ? "" : "等待转录数据");
+      this.setStatus(this.duration ? "" : "等待轉錄數據");
       this._draw();
       return;
     }
@@ -181,7 +181,7 @@ export class TimelineController {
     this._draw();
   }
 
-  showWaveformLoading(message = "波形加载中...") {
+  showWaveformLoading(message = "波形加載中...") {
     this.waveformLoading = true;
     this.setStatus(message);
   }
@@ -268,7 +268,7 @@ export class TimelineController {
   }
 
   // ---------------------------------------------------------------------------
-  // 内部实�?
+  // 內部實�?
   // ---------------------------------------------------------------------------
   _buildDom() {
     this.container.classList.add("timeline-ready");
@@ -278,7 +278,7 @@ export class TimelineController {
     this.viewport.className = "timeline-viewport";
     // BEGIN-EDIT
     this.viewport.tabIndex = 0;
-    this.viewport.setAttribute("aria-label", "时间轴");
+    this.viewport.setAttribute("aria-label", "時間軸");
     this.viewport.setAttribute("data-focus", "timeline");
     // END-EDIT
 

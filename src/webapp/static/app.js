@@ -90,6 +90,9 @@ const ENGINE_MODEL_OPTIONS = {
   "qwen3-asr": [
     { value: "Qwen/Qwen3-ASR-1.7B", label: "Qwen3-ASR-1.7B" },
   ],
+  "qwen-mini": [
+    { value: "api-default", label: "API Default" },
+  ],
   // END-EDIT
 };
 const POLL_INTERVAL_MS = 2000;
@@ -131,15 +134,6 @@ function cacheDom() {
   dom.openProjectFileList = document.querySelector("#open-project-file-list");
   dom.openProjectActiveName = document.querySelector("#open-project-active-name");
   // BEGIN-EDIT
-  if (dom.engineSelect) {
-    const engineField = dom.engineSelect.closest(".operation-strip__field");
-    if (engineField) {
-      engineField.remove();
-    } else {
-      dom.engineSelect.remove();
-    }
-    dom.engineSelect = null;
-  }
   if (!state.importGuardInitialized && typeof handleMediaSelection === "function") {
     handleMediaSelection = function guardedHandleMediaSelection(event) {
       try {
@@ -149,17 +143,17 @@ function cacheDom() {
           if (inputElement) {
             inputElement.value = "";
           }
-          logInfo("已取消导入新的音视频文件。");
+          logInfo("已取消導入新的音視頻文件。");
           return;
         }
 
         const activeTaskId = state.currentTaskId;
         const activeTaskType = state.currentTaskType || "";
         if (activeTaskId) {
-          const taskLabel = activeTaskType === "cut" ? "生成剪辑" : "转写";
-          const confirmAbort = window.confirm(`当前正在${taskLabel}，是否中止后导入新的音视频？`);
+          const taskLabel = activeTaskType === "cut" ? "生成剪輯" : "轉寫";
+          const confirmAbort = window.confirm(`當前正在${taskLabel}，是否中止後導入新的音視頻？`);
           if (!confirmAbort) {
-            logInfo("已取消导入新的音视频文件。");
+            logInfo("已取消導入新的音視頻文件。");
             if (inputElement) {
               inputElement.value = "";
             }
@@ -169,13 +163,13 @@ function cacheDom() {
           state.currentTaskId = null;
           state.currentTaskType = null;
           if (activeTaskType === "transcribe" && dom.taskStatus) {
-            dom.taskStatus.textContent = "已中止当前转写任务。";
+            dom.taskStatus.textContent = "已中止當前轉寫任務。";
             resetTranscribeButton();
           } else if (activeTaskType === "cut" && dom.cutStatus) {
-            dom.cutStatus.textContent = "已中止当前生成剪辑任务。";
+            dom.cutStatus.textContent = "已中止當前生成剪輯任務。";
             resetCutButton();
           }
-          logWarn(`已中止当前${taskLabel}任务，准备导入新的音视频。`);
+          logWarn(`已中止當前${taskLabel}任務，準備導入新的音視頻。`);
         }
 
         const hasTranscriptData = Boolean(state.transcript || state.fullTranscript);
@@ -190,11 +184,11 @@ function cacheDom() {
 
         if (hasWorkspaceContent) {
           const confirmMessage = hasTranscriptData
-            ? "当前场景已生成文稿，继续导入将关闭当前项目并创建新项目。是否继续？"
-            : "当前已打开音视频，继续导入将关闭之前的内容。是否继续？";
+            ? "當前場景已生成文稿，繼續導入將關閉當前項目並創建新項目。是否繼續？"
+            : "當前已打開音視頻，繼續導入將關閉之前的內容。是否繼續？";
           const confirmReset = window.confirm(confirmMessage);
           if (!confirmReset) {
-            logInfo("已取消导入新的音视频文件。");
+            logInfo("已取消導入新的音視頻文件。");
             if (inputElement) {
               inputElement.value = "";
             }
@@ -210,7 +204,7 @@ function cacheDom() {
         state.localPreviewUrl = URL.createObjectURL(file);
         updateMediaSource({ previewOnly: true });
         refreshTimelineWaveform();
-        logInfo(`已选择音视频文件：${state.currentMediaName}`);
+        logInfo(`已選擇音視頻文件：${state.currentMediaName}`);
       } catch (error) {
         const message = error instanceof Error ? error : new Error(String(error));
         logError(message);
@@ -231,7 +225,7 @@ function cacheDom() {
   dom.cutStatus = document.querySelector("#cut-status");
   if (dom.cutSubmitButton) {
     const label =
-      dom.cutSubmitButton.textContent?.trim() || state.cutButtonDefaultLabel || "生成剪辑";
+      dom.cutSubmitButton.textContent?.trim() || state.cutButtonDefaultLabel || "生成剪輯";
     if (dom.cutSubmitButton.dataset) {
       dom.cutSubmitButton.dataset.defaultLabel = label;
     }
@@ -291,7 +285,7 @@ function cacheDom() {
   dom.menuBar = document.querySelector("#menu-bar");
   dom.menus = Array.from(document.querySelectorAll(".menu"));
   if (dom.pageInfo) {
-    dom.pageInfo.textContent = "未选择项目";
+    dom.pageInfo.textContent = "未選擇項目";
   }
   if (dom.taskStatus) {
     dom.taskStatus.textContent = "";
@@ -415,10 +409,10 @@ function bindEvents() {
   if (dom.manuscriptRestoreAll) {
     dom.manuscriptRestoreAll.addEventListener("click", () => {
       if (!state.deletedKeys || state.deletedKeys.size === 0) {
-        logInfo("当前没有设定为删除的内容。");
+        logInfo("當前沒有設定為刪除的內容。");
         return;
       }
-      if (window.confirm("确定要复原所有设定为删除的文字吗？\n警告：这将会把所有红色的删除段落恢复为正常状态。")) {
+      if (window.confirm("確定要復原所有設定為刪除的文字嗎？\n警告：這將會把所有紅色的刪除段落恢復為正常狀態。")) {
         const keys = Array.from(state.deletedKeys);
         restoreTokens(keys, { announce: true });
       }
@@ -570,7 +564,7 @@ function handleDocumentClick(event) {
 async function openOptionsPanel() {
   if (!dom.optionsPanel) return;
   
-  // 加载虚拟硬盘状态
+  // 加載虛擬硬碟狀態
   await loadRamdiskStatus();
   
   dom.optionsPanel.classList.add("open");
@@ -657,14 +651,14 @@ async function saveCommonFillers(event) {
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      let message = `保存常用水词失败 (${response.status})`;
+      let message = `保存常用水詞失敗 (${response.status})`;
       try {
         const data = await response.json();
         if (data?.error) {
           message = data.error;
         }
       } catch (error) {
-        // ignore json 解析失败
+        // ignore json 解析失敗
       }
       throw new Error(message);
     }
@@ -679,7 +673,7 @@ async function saveCommonFillers(event) {
     highlightPreviewKeys([], false);
     closeCommonFillersPanel();
     const count = state.commonFillerWords.length;
-    logInfo(count ? `常用水词已更新，共 ${count} 条。` : "常用水词列表已清空。");
+    logInfo(count ? `常用水詞已更新，共 ${count} 條。` : "常用水詞列表已清空。");
   } catch (error) {
     logError(error instanceof Error ? error : new Error(String(error)));
   } finally {
@@ -693,7 +687,7 @@ async function loadCommonFillers() {
   try {
     const response = await fetch("/api/common-fillers");
     if (!response.ok) {
-      throw new Error(`读取常用水词失败 (${response.status})`);
+      throw new Error(`讀取常用水詞失敗 (${response.status})`);
     }
     const data = await response.json();
     const words = Array.isArray(data?.words) ? data.words : [];
@@ -701,7 +695,7 @@ async function loadCommonFillers() {
       .map((token) => String(token || "").trim())
       .filter(Boolean);
   } catch (error) {
-    console.warn("读取常用水词失败", error);
+    console.warn("讀取常用水詞失敗", error);
     state.commonFillerWords = [];
     logError(error instanceof Error ? error : new Error(String(error)));
   } finally {
@@ -714,10 +708,10 @@ function setPreviewFit(mode) {
   if (!dom.mediaPlayer) return;
   if (mode === "contain") {
     dom.mediaPlayer.style.objectFit = "contain";
-    logInfo("预览画面调整为适应窗口");
+    logInfo("預覽畫面調整為適應窗口");
   } else {
     dom.mediaPlayer.style.objectFit = "";
-    logInfo("预览画面恢复原始比例");
+    logInfo("預覽畫面恢復原始比例");
   }
 }
 
@@ -735,17 +729,17 @@ function resetTimelineZoom() {
   if (!state.timelineController) return;
   state.timelineController.autoFit();
   state.timelineZoom = state.timelineController.getZoom() || 1;
-  logInfo("时间轴已自适应显示");
+  logInfo("時間軸已自適應顯示");
 }
 
 // ---------------------------------------------------------------------------
-// 数据加载与项目管理
+// 數據加載與項目管理
 // ---------------------------------------------------------------------------
 
 async function refreshProjects() {
   try {
     const response = await fetch("/api/projects");
-    if (!response.ok) throw new Error(`加载项目列表失败: ${response.status}`);
+    if (!response.ok) throw new Error(`加載項目列表失敗: ${response.status}`);
     const data = await response.json();
     state.projects = Array.isArray(data.projects) ? data.projects : [];
     const currentExists =
@@ -770,7 +764,7 @@ function renderProjects() {
   if (!state.projects.length) {
     const placeholder = document.createElement("li");
     placeholder.className = "open-project-item";
-    placeholder.textContent = "暂无项目";
+    placeholder.textContent = "暫無項目";
     dom.openProjectList.appendChild(placeholder);
     return;
   }
@@ -782,14 +776,14 @@ function renderProjects() {
     }
     const nameSpan = document.createElement("span");
     nameSpan.className = "open-project-item__name";
-    nameSpan.textContent = project.name || `项目 #${project.id}`;
+    nameSpan.textContent = project.name || `項目 #${project.id}`;
     const metaSpan = document.createElement("span");
     metaSpan.className = "open-project-item__meta";
     metaSpan.textContent = `#${project.id}`;
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.className = "ghost-button open-project-item__delete";
-    removeBtn.textContent = "删除";
+    removeBtn.textContent = "刪除";
     removeBtn.addEventListener("click", (event) => {
       event.stopPropagation();
       deleteProject(project.id);
@@ -824,7 +818,7 @@ function loadRecentProjectFilesFromStorage() {
       }))
       .filter((entry) => Number.isInteger(entry.projectId) && Number.isInteger(entry.fileId));
   } catch (error) {
-    console.warn("读取最近文件失败", error);
+    console.warn("讀取最近文件失敗", error);
     state.recentProjectFiles = [];
   }
 }
@@ -833,7 +827,7 @@ function saveRecentProjectFilesToStorage() {
   try {
     window.localStorage?.setItem(RECENT_FILES_STORAGE_KEY, JSON.stringify(state.recentProjectFiles));
   } catch (error) {
-    console.warn("保存最近文件失败", error);
+    console.warn("保存最近文件失敗", error);
   }
 }
 
@@ -843,7 +837,7 @@ function renderRecentFiles() {
   if (!state.recentProjectFiles.length) {
     const placeholder = document.createElement("li");
     placeholder.className = "recent-file-item";
-    placeholder.textContent = "暂无记录";
+    placeholder.textContent = "暫無記錄";
     dom.recentFileList.appendChild(placeholder);
     return;
   }
@@ -853,7 +847,7 @@ function renderRecentFiles() {
 
     const nameSpan = document.createElement("span");
     nameSpan.className = "recent-file-item__name";
-    const projectTitle = entry.projectName || `项目 #${entry.projectId}`;
+    const projectTitle = entry.projectName || `項目 #${entry.projectId}`;
     const fileTitle = entry.fileName || `工程文件 #${entry.fileId}`;
     nameSpan.textContent = `${projectTitle} — ${fileTitle}`;
 
@@ -887,7 +881,7 @@ function recordRecentProjectFile({ projectId, projectName, fileId, fileName }) {
   );
   filtered.unshift({
     projectId,
-    projectName: projectName || `项目 #${projectId}`,
+    projectName: projectName || `項目 #${projectId}`,
     fileId,
     fileName: fileName || `工程文件 #${fileId}`,
     openedAt: timestamp,
@@ -974,11 +968,11 @@ async function selectProjectInOpenPanel(projectId) {
   renderProjects();
   const project = state.projects.find((item) => item.id === projectId);
   if (dom.openProjectActiveName) {
-    dom.openProjectActiveName.textContent = project ? project.name || `项目 #${project.id}` : "";
+    dom.openProjectActiveName.textContent = project ? project.name || `項目 #${project.id}` : "";
   }
   try {
     const response = await fetch(`/api/project-files?project_id=${projectId}`);
-    if (!response.ok) throw new Error(`加载工程文件失败: ${response.status}`);
+    if (!response.ok) throw new Error(`加載工程文件失敗: ${response.status}`);
     const data = await response.json();
     state.openPanelFiles = Array.isArray(data?.files) ? data.files : [];
   } catch (error) {
@@ -994,7 +988,7 @@ function renderOpenProjectFiles() {
   if (!state.openPanelFiles.length) {
     const placeholder = document.createElement("li");
     placeholder.className = "open-project-file-item";
-    placeholder.textContent = state.openPanelProjectId ? "该项目暂无工程文件" : "请选择项目";
+    placeholder.textContent = state.openPanelProjectId ? "該項目暫無工程文件" : "請選擇項目";
     dom.openProjectFileList.appendChild(placeholder);
     return;
   }
@@ -1044,7 +1038,7 @@ async function refreshProjectFiles(options = {}) {
   const { autoSelect = false } = options;
   try {
     const response = await fetch(`/api/project-files?project_id=${projectId}`);
-    if (!response.ok) throw new Error(`加载工程文件列表失败: ${response.status}`);
+    if (!response.ok) throw new Error(`加載工程文件列表失敗: ${response.status}`);
     const data = await response.json();
     const files = Array.isArray(data?.files) ? data.files : [];
     const previousId = state.currentProjectFileId;
@@ -1079,11 +1073,11 @@ async function loadProjectFile(projectFileId, options = {}) {
   const { silent = false } = options;
   try {
     const response = await fetch(`/api/project-files/${projectFileId}`);
-    if (!response.ok) throw new Error(`加载工程文件失败: ${response.status}`);
+    if (!response.ok) throw new Error(`加載工程文件失敗: ${response.status}`);
     const data = await response.json();
     const file = data?.file;
     if (!file) {
-      throw new Error("工程文件返回数据异常");
+      throw new Error("工程文件返回數據異常");
     }
     state.currentProjectFileId = file.id;
     state.currentProjectFileRevision = Number(file.revision) || 0;
@@ -1095,13 +1089,13 @@ async function loadProjectFile(projectFileId, options = {}) {
     updateTimelineSelection();
     refreshTimelineWaveform();
     updateSilenceActionState();
-    resetHistory("加载工程");
+    resetHistory("加載工程");
     renderProjectFiles();
     if (!silent) {
       const project = state.projects.find((item) => item.id === state.currentProjectId);
-      const projectName = project?.name || `项目 #${state.currentProjectId}`;
+      const projectName = project?.name || `項目 #${state.currentProjectId}`;
       const fileLabel = file.name || metadata.label || `工程文件 #${file.id}`;
-      logInfo(`已打开工程文件: ${fileLabel}`);
+      logInfo(`已打開工程文件: ${fileLabel}`);
       recordRecentProjectFile({
         projectId: state.currentProjectId,
         projectName,
@@ -1117,17 +1111,17 @@ async function loadProjectFile(projectFileId, options = {}) {
 async function handleFileSaveAs() {
   closeAllMenus();
   if (!Number.isInteger(state.currentProjectId)) {
-    logError(new Error("暂无选中的项目"));
+    logError(new Error("暫無選中的項目"));
     return;
   }
   const defaultName = state.projectFiles.length ? `工程副本 ${state.projectFiles.length + 1}` : "新建工程文件";
-  const nameInput = window.prompt("请输入工程文件名称：", defaultName);
+  const nameInput = window.prompt("請輸入工程文件名稱：", defaultName);
   if (nameInput == null) {
     return;
   }
   const name = nameInput.trim();
   if (!name) {
-    logWarn("工程文件名称不能为空");
+    logWarn("工程文件名稱不能為空");
     return;
   }
   const deleteRanges = buildDeleteRangesFromDeletedKeys();
@@ -1149,10 +1143,10 @@ async function handleFileSaveAs() {
         selection: selectionPayload,
       }),
     });
-    if (!response.ok) throw new Error(`创建工程文件失败: ${response.status}`);
+    if (!response.ok) throw new Error(`創建工程文件失敗: ${response.status}`);
     const data = await response.json();
     const file = data?.file;
-    logInfo(`已创建工程文件：${name}`);
+    logInfo(`已創建工程文件：${name}`);
     await refreshProjectFiles({ autoSelect: false });
     if (file?.id) {
       await loadProjectFile(file.id);
@@ -1165,7 +1159,7 @@ async function handleFileSaveAs() {
 async function handleFileSave() {
   closeAllMenus();
   if (!Number.isInteger(state.currentProjectId) || !Number.isInteger(state.currentProjectFileId)) {
-    logWarn("当前没有打开的工程文件");
+    logWarn("當前沒有打開的工程文件");
     return;
   }
   try {
@@ -1174,7 +1168,7 @@ async function handleFileSave() {
     }
     setCutButtonProgress(0);
     if (dom.cutStatus) {
-      dom.cutStatus.textContent = "正在提交剪辑任务";
+      dom.cutStatus.textContent = "正在提交剪輯任務";
     }
     const deleteRanges = buildDeleteRangesFromDeletedKeys();
     await persistSelection(deleteRanges);
@@ -1193,28 +1187,28 @@ function handleFileClose() {
   renderProjects();
   renderOpenProjectFiles();
   renderRecentFiles();
-  logInfo("项目已关闭");
+  logInfo("項目已關閉");
 }
 
 
 
 function formatProjectFileTimestamp(value) {
-  if (!value) return "未知时间";
+  if (!value) return "未知時間";
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) {
-    return "未知时间";
+    return "未知時間";
   }
   return date.toLocaleString();
 }
 
 async function deleteProject(projectId) {
   if (!Number.isInteger(projectId)) return;
-  const confirmed = window.confirm(`确定要删除项目 #${projectId} 吗？该操作不可恢复。`);
+  const confirmed = window.confirm(`確定要刪除項目 #${projectId} 嗎？該操作不可恢復。`);
   if (!confirmed) return;
   try {
     const response = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
-    if (!response.ok) throw new Error(`删除项目失败: ${response.status}`);
-    logInfo(`项目 #${projectId} 已删除`);
+    if (!response.ok) throw new Error(`刪除項目失敗: ${response.status}`);
+    logInfo(`項目 #${projectId} 已刪除`);
     if (state.currentProjectId === projectId) {
       resetWorkspaceState();
     }
@@ -1350,7 +1344,7 @@ async function fetchTranscriptPreferred(projectId) {
   } catch (error) {
     logError(error);
   }
-  logWarn("拉取完整转录失败，已回退到分页模式");
+  logWarn("拉取完整轉錄失敗，已回退到分頁模式");
   const pagedData = await fetchTranscriptPage(projectId, state.pageOffset, state.pageLimit);
   return {
     mode: "paged",
@@ -1365,7 +1359,7 @@ async function fetchTranscriptPage(projectId, offset, limit) {
   if (Number.isInteger(offset) && offset > 0) params.set("offset", String(offset));
   if (Number.isInteger(limit) && limit > 0) params.set("limit", String(limit));
   const response = await fetch(`/api/projects/${projectId}/transcript?${params.toString()}`);
-  if (!response.ok) throw new Error(`获取转录失败: ${response.status}`);
+  if (!response.ok) throw new Error(`獲取轉錄失敗: ${response.status}`);
   return response.json();
 }
 
@@ -1394,7 +1388,7 @@ async function fetchSelection(projectId, options = {}) {
   const response = await fetch(
     `/api/projects/${projectId}/selection${query ? `?${query}` : ""}`,
   );
-  if (!response.ok) throw new Error(`加载删除计划失败: ${response.status}`);
+  if (!response.ok) throw new Error(`加載刪除計劃失敗: ${response.status}`);
   return response.json();
 }
 
@@ -1402,7 +1396,7 @@ async function fetchMetadata(projectId) {
   const response = await fetch(`/api/projects/${projectId}/metadata`);
   if (!response.ok) {
     if (response.status === 404) return null;
-    throw new Error(`获取项目元数据失败: ${response.status}`);
+    throw new Error(`獲取項目元數據失敗: ${response.status}`);
   }
   const data = await response.json();
   return data?.metadata || null;
@@ -1425,7 +1419,7 @@ async function ensureFullTranscript(projectId, version) {
       state.fullTranscriptVersion = null;
       return null;
     }
-    if (!response.ok) throw new Error(`获取完整转录失败: ${response.status}`);
+    if (!response.ok) throw new Error(`獲取完整轉錄失敗: ${response.status}`);
     const data = await response.json();
     state.fullTranscript = data.transcript || null;
     state.fullTranscriptVersion = data.version ?? null;
@@ -1466,11 +1460,11 @@ function updatePageInfo(pagination = {}) {
   const limit = pagination.limit ?? (returned || state.pageLimit);
   const start = total === 0 ? 0 : offset + 1;
   const end = Math.min(total, offset + returned);
-  dom.pageInfo.textContent = `片段 ${start}-${end} / ${total}（每页 ${limit}）`;
+  dom.pageInfo.textContent = `片段 ${start}-${end} / ${total}（每頁 ${limit}）`;
 }
 
 // ---------------------------------------------------------------------------
-// 转录渲染与令牌管理
+// 轉錄渲染與令牌管理
 // ---------------------------------------------------------------------------
 
 function rebuildTokenState(transcript, options = {}) {
@@ -1510,7 +1504,7 @@ function renderTranscript(transcript) {
   if (!transcript || !Array.isArray(transcript.segments) || !transcript.segments.length) {
     const empty = document.createElement("div");
     empty.className = "segment empty";
-    empty.textContent = "暂无转录内容";
+    empty.textContent = "暫無轉錄內容";
     dom.segmentsContainer.appendChild(empty);
     return;
   }
@@ -1681,7 +1675,7 @@ function resetWorkspaceState(options = {}) {
     state.timelineController.setData(null);
     state.timelineController.setDeleteRanges([]);
     state.timelineController.setWaveform(null);
-    state.timelineController.setStatus("未选择项目");
+    state.timelineController.setStatus("未選擇項目");
   }
   if (!keepLocalPreview && state.localPreviewUrl) {
     URL.revokeObjectURL(state.localPreviewUrl);
@@ -1690,7 +1684,7 @@ function resetWorkspaceState(options = {}) {
   updateMediaSource({ previewOnly: true });
   updateSilenceActionState();
   if (dom.pageInfo) {
-    dom.pageInfo.textContent = "未选择项目";
+    dom.pageInfo.textContent = "未選擇項目";
   }
   if (dom.taskStatus) {
     dom.taskStatus.textContent = "";
@@ -1749,7 +1743,7 @@ function buildTimelineData(transcript) {
 }
 
 // ---------------------------------------------------------------------------
-// 交互：选择、删除、撤销
+// 交互：選擇、刪除、撤銷
 // ---------------------------------------------------------------------------
 
 function handleTranscriptClick(event) {
@@ -1760,7 +1754,7 @@ function handleTranscriptClick(event) {
 
   const token = state.tokenMap.get(key);
   if (state.deletedKeys.has(key) && !state.hideDeleted) {
-    // 点击已删除内容 -> 恢复
+    // 點擊已刪除內容 -> 恢復
     restoreTokens([key], { announce: true });
     return;
   }
@@ -1960,14 +1954,14 @@ function deleteTokens(keys, options = {}) {
     }
   });
   if (!changed) return;
-  pushHistorySnapshot(`删除 ${keys.length} 个片段`);
+  pushHistorySnapshot(`刪除 ${keys.length} 個片段`);
   updateDeletedVisuals(keys);
   scheduleTimelineSelectionUpdate();
   updateSilenceActionState();
   clearSelection();
   const { reason } = options;
   if (reason === "search") {
-    logInfo(`已删除 ${keys.length} 个匹配项`);
+    logInfo(`已刪除 ${keys.length} 個匹配項`);
   }
 }
 
@@ -1980,13 +1974,13 @@ function restoreTokens(keys, options = {}) {
     }
   });
   if (!changed) return;
-  pushHistorySnapshot(`恢复 ${keys.length} 个片段`);
+  pushHistorySnapshot(`恢復 ${keys.length} 個片段`);
   updateDeletedVisuals(keys);
   scheduleTimelineSelectionUpdate();
   updateSilenceActionState();
   const { announce = false } = options;
   if (announce) {
-    logInfo(`已恢复 ${keys.length} 个片段`);
+    logInfo(`已恢復 ${keys.length} 個片段`);
   }
 }
 
@@ -2112,7 +2106,7 @@ function applyHistorySnapshot(snapshot, direction) {
   } else {
     updateSearchHighlights();
   }
-  const prefix = direction === "redo" ? "重做" : "撤销";
+  const prefix = direction === "redo" ? "重做" : "撤銷";
   logInfo(`${prefix}: ${snapshot.description}`);
 }
 
@@ -2142,7 +2136,7 @@ function pushHistorySnapshot(description) {
   state.future = [];
 }
 
-function resetHistory(description = "初始状态") {
+function resetHistory(description = "初始狀態") {
   const snapshot = captureHistorySnapshot(description);
   state.history = [snapshot];
   state.future = [];
@@ -2212,7 +2206,7 @@ function scheduleTimelineSelectionUpdate(options = {}) {
 
 async function persistSelection(deleteRanges, options = {}) {
   if (!state.currentProjectId) {
-    throw new Error('暂无选中的项目');
+    throw new Error('暫無選中的項目');
   }
   if (!Array.isArray(deleteRanges) || !deleteRanges.length) {
     return { skipped: true };
@@ -2245,7 +2239,7 @@ async function persistSelection(deleteRanges, options = {}) {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(`保存删除计划失败: ${response.status}`);
+    throw new Error(`保存刪除計劃失敗: ${response.status}`);
   }
   const data = await response.json();
   state.selectionVersion = data.version;
@@ -2273,7 +2267,7 @@ async function saveProjectFileState(projectFileId, selectionPayload, options = {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`保存工程文件失败: ${response.status}`);
+    throw new Error(`保存工程文件失敗: ${response.status}`);
   }
   const data = await response.json();
   const file = data?.file;
@@ -2318,7 +2312,7 @@ async function refreshSnapshotList() {
   try {
     const response = await fetch(`/api/projects/${state.currentProjectId}/snapshots`);
     if (!response.ok) {
-      throw new Error(`加载版本信息失败: ${response.status}`);
+      throw new Error(`加載版本信息失敗: ${response.status}`);
     }
     const data = await response.json();
     const selectionEntries = Array.isArray(data?.selections) ? data.selections : [];
@@ -2342,7 +2336,7 @@ function renderSnapshotList() {
   if (state.selectionSnapshotLoading) {
     const item = document.createElement("li");
     item.className = "snapshot-item snapshot-item--loading";
-    item.textContent = "正在加载版本...";
+    item.textContent = "正在加載版本...";
     dom.snapshotList.appendChild(item);
     dom.snapshotEmpty?.classList.add("hidden");
     return;
@@ -2350,7 +2344,7 @@ function renderSnapshotList() {
   if (state.selectionSnapshotError) {
     const item = document.createElement("li");
     item.className = "snapshot-item snapshot-item--error";
-    item.textContent = state.selectionSnapshotError.message || "加载版本信息失败";
+    item.textContent = state.selectionSnapshotError.message || "加載版本信息失敗";
     dom.snapshotList.appendChild(item);
     dom.snapshotEmpty?.classList.add("hidden");
     return;
@@ -2378,8 +2372,8 @@ function renderSnapshotList() {
     const createdAt = snapshot.createdAt ? new Date(snapshot.createdAt) : null;
     const datetime = createdAt && !Number.isNaN(createdAt.valueOf())
       ? createdAt.toLocaleString()
-      : "未知时间";
-    const baseInfo = Number.isFinite(snapshot.baseVersion) ? `基于 #${snapshot.baseVersion}` : "";
+      : "未知時間";
+    const baseInfo = Number.isFinite(snapshot.baseVersion) ? `基於 #${snapshot.baseVersion}` : "";
     meta.textContent = baseInfo ? `${datetime} · ${baseInfo}` : datetime;
 
     const actionBar = document.createElement("div");
@@ -2391,9 +2385,9 @@ function renderSnapshotList() {
     loadButton.dataset.version = String(snapshot.version);
     if (snapshot.version === state.selectionVersion) {
       loadButton.disabled = true;
-      loadButton.textContent = "已加载";
+      loadButton.textContent = "已加載";
     } else {
-      loadButton.textContent = "加载版本";
+      loadButton.textContent = "加載版本";
     }
     actionBar.appendChild(loadButton);
 
@@ -2412,7 +2406,7 @@ function renderSnapshotList() {
 
 async function openSnapshotPanel() {
   if (!state.currentProjectId) {
-    logError(new Error("暂无选中的项目"));
+    logError(new Error("暫無選中的項目"));
     return;
   }
   state.selectionSnapshotDialogOpen = true;
@@ -2445,12 +2439,12 @@ function closeSnapshotPanel() {
 
 async function handleSnapshotCreate() {
   if (!state.currentProjectId) {
-    logError(new Error("暂无选中的项目"));
+    logError(new Error("暫無選中的項目"));
     return;
   }
   const deleteRanges = buildDeleteRangesFromDeletedKeys();
   const defaultLabel = `版本 ${state.selectionVersion ? state.selectionVersion + 1 : 1}`;
-  const label = window.prompt("为当前编辑保存一个版本，请输入名称：", defaultLabel);
+  const label = window.prompt("為當前編輯保存一個版本，請輸入名稱：", defaultLabel);
   if (label == null) {
     return;
   }
@@ -2478,7 +2472,7 @@ function handleSnapshotAction(event) {
 
 async function loadSnapshotVersion(version) {
   if (!state.currentProjectId) {
-    logError(new Error("暂无选中的项目"));
+    logError(new Error("暫無選中的項目"));
     return;
   }
   try {
@@ -2490,12 +2484,12 @@ async function loadSnapshotVersion(version) {
       updateTimelineSelection();
       refreshTimelineWaveform();
       updateSilenceActionState();
-      resetHistory("加载版本");
-      logInfo(`已加载版本 #${version}`);
+      resetHistory("加載版本");
+      logInfo(`已加載版本 #${version}`);
       renderSnapshotList();
       closeSnapshotPanel();
     } else {
-      logWarn("指定版本没有删除计划数据");
+      logWarn("指定版本沒有刪除計劃數據");
     }
   } catch (error) {
     logError(error);
@@ -2617,7 +2611,7 @@ function tryFocusTokenFromHover() {
 }
 
 // ---------------------------------------------------------------------------
-// 搜索与批量操作
+// 搜索與批量操作
 // ---------------------------------------------------------------------------
 
 function handleSearchInput(event) {
@@ -2627,15 +2621,15 @@ function handleSearchInput(event) {
 
 function normalizeSearchString(text) {
   let result = String(text || "").trim().toLowerCase();
-  // 标准化标点符号,与transcript-utils.js中的normalizeWordText保持一致
+  // 標準化標點符號,與transcript-utils.js中的normalizeWordText保持一致
   result = result
-    .replace(/[\u3001\uFF64\uFF65\u203B]/gu, "\uFF0C")  // 统一为中文逗号
-    .replace(/[,\uFF0C]/gu, "\uFF0C")                    // 统一为中文逗号
-    .replace(/[.\u3002]/gu, "\u3002")                    // 统一为中文句号
-    .replace(/[;\uFF1B]/gu, "\uFF1B")                    // 统一为中文分号
-    .replace(/[:\uFF1A]/gu, "\uFF1A")                    // 统一为中文冒号
-    .replace(/[!\uFF01]/gu, "\uFF01")                    // 统一为中文感叹号
-    .replace(/[?\uFF1F]/gu, "\uFF1F");                   // 统一为中文问号
+    .replace(/[\u3001\uFF64\uFF65\u203B]/gu, "\uFF0C")  // 統一為中文逗號
+    .replace(/[,\uFF0C]/gu, "\uFF0C")                    // 統一為中文逗號
+    .replace(/[.\u3002]/gu, "\u3002")                    // 統一為中文句號
+    .replace(/[;\uFF1B]/gu, "\uFF1B")                    // 統一為中文分號
+    .replace(/[:\uFF1A]/gu, "\uFF1A")                    // 統一為中文冒號
+    .replace(/[!\uFF01]/gu, "\uFF01")                    // 統一為中文感嘆號
+    .replace(/[?\uFF1F]/gu, "\uFF1F");                   // 統一為中文問號
   return result;
 }
 
@@ -2648,7 +2642,7 @@ function normalizedTokenText(token, options = {}) {
 
 function isTokenEligibleForMatching(token, includeDeleted = false) {
   if (!token) return false;
-  // 允许word和punctuation类型参与搜索匹配
+  // 允許word和punctuation類型參與搜索匹配
   if (token.type !== "word" && token.type !== "punctuation") return false;
   if (!includeDeleted && state.deletedKeys.has(token.key)) return false;
   const textValue = typeof token.text === "string" ? token.text.trim() : "";
@@ -2751,7 +2745,7 @@ function performSearch(query, options = {}) {
   const sequences = findTokenSequencesMatchingText(query);
   if (!sequences.length) {
     if (!silent) {
-      logInfo("未找到匹配内容");
+      logInfo("未找到匹配內容");
     }
     dom.searchActions?.classList.remove("visible");
     updateSearchHighlights();
@@ -2931,11 +2925,11 @@ function highlightFillerPreview(active) {
 function applyFillerWordsAndSave() {
   const matches = getFillerMatches();
   if (!matches.length) {
-    logInfo("未找到可删除的水词");
+    logInfo("未找到可刪除的水詞");
     return;
   }
   deleteTokens(matches.map((token) => token.key));
-  logInfo(`已删除 ${matches.length} 个水词`);
+  logInfo(`已刪除 ${matches.length} 個水詞`);
 }
 
 function highlightSilencePlaceholders(active) {
@@ -2952,11 +2946,11 @@ function highlightSilencePlaceholders(active) {
 function handleDeleteAllSilencePlaceholders() {
   const silenceKeys = state.tokens.filter((token) => token.type === "silence").map((token) => token.key);
   if (!silenceKeys.length) {
-    logInfo("没有静音占位可以删除");
+    logInfo("沒有靜音佔位可以刪除");
     return;
   }
   deleteTokens(silenceKeys);
-  logInfo(`已删除 ${silenceKeys.length} 个静音占位符`);
+  logInfo(`已刪除 ${silenceKeys.length} 個靜音佔位符`);
 }
 
 function updateSilenceActionState() {
@@ -2971,7 +2965,7 @@ function updateSilenceActionState() {
 }
 
 // ---------------------------------------------------------------------------
-// 时间轴联动
+// 時間軸聯動
 // ---------------------------------------------------------------------------
 
 function highlightPreviewKeys(keys, active) {
@@ -3128,7 +3122,7 @@ function handleTimelineToggle(range, context = {}) {
 
 function handleTimelineZoomChange(zoom) {
   state.timelineZoom = Number(zoom) || 1;
-  logInfo(`时间轴缩放：x${state.timelineZoom.toFixed(2)}`);
+  logInfo(`時間軸縮放：x${state.timelineZoom.toFixed(2)}`);
 }
 
 function findKeysByRange(start, end) {
@@ -3266,7 +3260,7 @@ function triggerTimelinePlayback() {
 // END-EDIT
 
 // ---------------------------------------------------------------------------
-// 文件导入、项目创建、任务轮询
+// 文件導入、項目創建、任務輪詢
 // ---------------------------------------------------------------------------
 
 function handleTranscriptFilePick() {
@@ -3284,7 +3278,7 @@ async function handleCreateProject(event) {
   if (!dom.createFileInput) return;
   const file = dom.createFileInput.files?.[0];
   if (!file) {
-    logError(new Error("请选择 transcript.json 文件"));
+    logError(new Error("請選擇 transcript.json 文件"));
     return;
   }
   try {
@@ -3300,9 +3294,9 @@ async function handleCreateProject(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!response.ok) throw new Error(`创建项目失败: ${response.status}`);
+    if (!response.ok) throw new Error(`創建項目失敗: ${response.status}`);
     const data = await response.json();
-    logInfo(`项目 #${data?.project?.id} 已创建`);
+    logInfo(`項目 #${data?.project?.id} 已創建`);
     dom.createForm?.reset();
     await refreshProjects();
     if (data?.project?.id) {
@@ -3318,14 +3312,14 @@ async function handleUploadAndTranscribe(event) {
   if (!dom.mediaFileInput) return;
   const file = dom.mediaFileInput.files?.[0];
   if (!file) {
-    logError(new Error("请先选择音视频文件"));
+    logError(new Error("請先選擇音視頻文件"));
     return;
   }
   state.currentMediaName = file.name;
   try {
     if (state.currentTaskId) {
-      const taskLabel = state.currentTaskType === "cut" ? "生成剪辑" : "转写";
-      logWarn(`当前存在${taskLabel}任务，请等待完成或停止后再试。`);
+      const taskLabel = state.currentTaskType === "cut" ? "生成剪輯" : "轉寫";
+      logWarn(`當前存在${taskLabel}任務，請等待完成或停止後再試。`);
       resetTranscribeButton();
       return;
     }
@@ -3334,7 +3328,7 @@ async function handleUploadAndTranscribe(event) {
     }
     setTranscribeButtonProgress(0);
     if (dom.taskStatus) {
-      dom.taskStatus.textContent = "已提交转写任务，正在上传音视频…";
+      dom.taskStatus.textContent = "已提交轉寫任務，正在上傳音視頻…";
     }
     const uploadForm = new FormData();
     uploadForm.append("file", file);
@@ -3342,21 +3336,21 @@ async function handleUploadAndTranscribe(event) {
       method: "POST",
       body: uploadForm,
     });
-    if (!uploadResponse.ok) throw new Error(`上传文件失败: ${uploadResponse.status}`);
+    if (!uploadResponse.ok) throw new Error(`上傳文件失敗: ${uploadResponse.status}`);
     const uploadData = await uploadResponse.json();
     if (uploadData.repair_notice) {
       logWarn(uploadData.repair_notice);
     }
     if (uploadData.repair_detail) {
-      logInfo(`FFmpeg 输出：${uploadData.repair_detail}`);
+      logInfo(`FFmpeg 輸出：${uploadData.repair_detail}`);
     }
     const mediaPath = uploadData.path;
-    if (!mediaPath) throw new Error("服务器未返回媒体路径");
+    if (!mediaPath) throw new Error("伺服器未返回媒體路徑");
 
     // BEGIN-EDIT
     if (state.currentTaskId) {
-      const taskLabel = state.currentTaskType === "cut" ? "生成剪辑" : "转写";
-      logWarn(`当前正在${taskLabel}，请先等待任务完成或取消导入。`);
+      const taskLabel = state.currentTaskType === "cut" ? "生成剪輯" : "轉寫";
+      logWarn(`當前正在${taskLabel}，請先等待任務完成或取消導入。`);
       return;
     }
     const engine = dom.engineSelect?.value || "qwen3-asr";
@@ -3365,6 +3359,8 @@ async function handleUploadAndTranscribe(event) {
     const device = dom.deviceSelect?.value || "auto";
     const presplitMode = document.querySelector("#import-presplit-mode")?.value || "auto";
     const presplitSegments = parseInt(document.querySelector("#presplit-segments")?.value || "10");
+    const diarize = document.querySelector("#diarize-select")?.value === "true";
+    const simplified = document.querySelector("#simplified-select")?.value === "true";
     const taskPayload = {
       media_path: mediaPath,
       engine,
@@ -3373,6 +3369,8 @@ async function handleUploadAndTranscribe(event) {
       device,
       presplit_mode: presplitMode,
       presplit_segments: presplitSegments,
+      diarize,
+      simplified,
     };
 
     const taskResponse = await fetch("/api/tasks/transcribe", {
@@ -3380,18 +3378,18 @@ async function handleUploadAndTranscribe(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(taskPayload),
     });
-    if (!taskResponse.ok) throw new Error(`提交转写任务失败: ${taskResponse.status}`);
+    if (!taskResponse.ok) throw new Error(`提交轉寫任務失敗: ${taskResponse.status}`);
     const taskData = await taskResponse.json();
     state.currentTaskId = taskData.task_id;
     state.currentTaskType = "transcribe";
     startTaskPolling();
-    dom.taskStatus.textContent = "已提交转写任务，正在后台执行…";
+    dom.taskStatus.textContent = "已提交轉寫任務，正在後臺執行…";
     if (state.localPreviewUrl) {
       URL.revokeObjectURL(state.localPreviewUrl);
     }
     state.localPreviewUrl = URL.createObjectURL(file);
     updateMediaSource({ previewOnly: true });
-    logInfo("文件已上传并开始转写任务");
+    logInfo("文件已上傳並開始轉寫任務");
   } catch (error) {
     logError(error);
   }
@@ -3418,7 +3416,7 @@ function startTaskPolling() {
     if (!state.currentTaskId) return;
     try {
       const response = await fetch(`/api/tasks/${state.currentTaskId}`);
-      if (!response.ok) throw new Error(`查询任务失败: ${response.status}`);
+      if (!response.ok) throw new Error(`查詢任務失敗: ${response.status}`);
       const data = await response.json();
       handleTaskUpdate(data);
       if (data.status === "completed" || data.status === "failed") {
@@ -3492,20 +3490,31 @@ async function handleTaskUpdate(data) {
   }
   if (status === "completed" && type === "transcribe") {
     await handleTranscribeCompleted(data);
-    dom.taskStatus.textContent = "转写完成";
+    dom.taskStatus.textContent = "轉寫完成";
   }
   if (status === "completed" && type === "cut") {
     resetCutButton();
-    dom.cutStatus.textContent = "剪辑完成";
-    logInfo("剪辑任务已完成");
+    dom.cutStatus.textContent = "剪輯完成";
+    logInfo("剪輯任務已完成");
+    if (data.result && data.result.output_path) {
+      const downloadUrl = `/api/download?path=${encodeURIComponent(data.result.output_path)}`;
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      const fileName = data.result.output_path.split(/[/\\]/).pop() || "output_video";
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      logInfo(`剪輯已下載：${fileName}`);
+    }
   }
   if (status === "failed") {
-    logError(new Error(data.message || "后台任务失败"));
+    logError(new Error(data.message || "後臺任務失敗"));
     if (type === "transcribe") {
-      dom.taskStatus.textContent = data.message || "转写任务失败";
+      dom.taskStatus.textContent = data.message || "轉寫任務失敗";
     } else if (type === "cut") {
       resetCutButton();
-      dom.cutStatus.textContent = data.message || "剪辑任务失败";
+      dom.cutStatus.textContent = data.message || "剪輯任務失敗";
     }
   }
   if (status === "completed" || status === "failed") {
@@ -3518,7 +3527,7 @@ async function handleTranscribeCompleted(data) {
   const transcriptPayload = data.result?.transcript;
   const mediaPath = data.result?.media_path;
   if (!transcriptPayload) {
-    logError(new Error("未收到转写结果"));
+    logError(new Error("未收到轉寫結果"));
     return;
   }
   try {
@@ -3526,7 +3535,7 @@ async function handleTranscribeCompleted(data) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: state.currentMediaName || "自动转写项目",
+        name: state.currentMediaName || "自動轉寫項目",
         transcript: transcriptPayload,
         metadata: {
           media_path: mediaPath,
@@ -3534,9 +3543,9 @@ async function handleTranscribeCompleted(data) {
         },
       }),
     });
-    if (!response.ok) throw new Error(`创建项目失败: ${response.status}`);
+    if (!response.ok) throw new Error(`創建項目失敗: ${response.status}`);
     const projectData = await response.json();
-    logInfo(`转写完成，项目 #${projectData?.project?.id} 已创建`);
+    logInfo(`轉寫完成，項目 #${projectData?.project?.id} 已創建`);
     await refreshProjects();
     if (projectData?.project?.id) {
       await setCurrentProject(projectData.project.id);
@@ -3550,13 +3559,13 @@ function handleMediaSelection(event) {
   const file = event.target?.files?.[0];
   resetWorkspaceState();
   if (!file) {
-    logInfo("未选择媒体文件，已清空当前场景");
+    logInfo("未選擇媒體文件，已清空當前場景");
     return;
   }
   state.currentMediaName = file.name;
   state.localPreviewUrl = URL.createObjectURL(file);
   updateMediaSource({ previewOnly: true });
-  logInfo(`已选择媒体文件：${state.currentMediaName}`);
+  logInfo(`已選擇媒體文件：${state.currentMediaName}`);
 }
 
 function updateMediaSource(options = {}) {
@@ -3599,18 +3608,19 @@ function handleMediaTimeUpdate() {
 }
 
 // ---------------------------------------------------------------------------
-// 保存 / 导出删除计划
+// 保存 / 導出刪除計劃
 // ---------------------------------------------------------------------------
 
 async function handleSaveSelection() {
   if (!state.currentProjectId) {
-    logError(new Error("暂无选中的项目"));
+    logError(new Error("暫無選中的項目"));
     return;
   }
   try {
     const deleteRanges = buildDeleteRangesFromDeletedKeys();
+    await persistTranscript();
     await persistSelection(deleteRanges);
-    logInfo("删除计划已保存");
+    logInfo("刪除計劃已保存");
   } catch (error) {
     logError(error);
   }
@@ -3629,22 +3639,40 @@ function handleExportSelection() {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
-  logInfo("删除计划已导出");
+  logInfo("刪除計劃已導出");
+}
+
+async function persistTranscript() {
+  if (!state.currentProjectId || !state.transcript) {
+    return;
+  }
+  try {
+    const response = await fetch(`/api/projects/${state.currentProjectId}/transcript`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state.transcript),
+    });
+    if (!response.ok) {
+      console.warn(`保存 transcript 失敗: ${response.status}`);
+    }
+  } catch (error) {
+    console.warn("保存 transcript 異常:", error);
+  }
 }
 
 // ---------------------------------------------------------------------------
-// 剪辑任务
+// 剪輯任務
 // ---------------------------------------------------------------------------
 
 function getTranscribeButtonBaseLabel() {
   if (!dom.transcribeSubmitButton) {
-    return state.transcribeButtonDefaultLabel || "转写";
+    return state.transcribeButtonDefaultLabel || "轉寫";
   }
   const defaultLabel =
     dom.transcribeSubmitButton.dataset?.defaultLabel ||
     dom.transcribeSubmitButton.textContent?.trim() ||
     state.transcribeButtonDefaultLabel ||
-    "转写";
+    "轉寫";
   if (dom.transcribeSubmitButton.dataset) {
     dom.transcribeSubmitButton.dataset.defaultLabel = defaultLabel;
   }
@@ -3671,13 +3699,13 @@ function resetTranscribeButton() {
 
 function getCutButtonBaseLabel() {
   if (!dom.cutSubmitButton) {
-    return state.cutButtonDefaultLabel || "生成剪辑";
+    return state.cutButtonDefaultLabel || "生成剪輯";
   }
   const defaultLabel =
     dom.cutSubmitButton.dataset?.defaultLabel ||
     dom.cutSubmitButton.textContent?.trim() ||
     state.cutButtonDefaultLabel ||
-    "生成剪辑";
+    "生成剪輯";
   if (dom.cutSubmitButton.dataset) {
     dom.cutSubmitButton.dataset.defaultLabel = defaultLabel;
   }
@@ -3705,18 +3733,19 @@ function resetCutButton() {
 async function handleCutSubmit(event) {
   event.preventDefault();
   if (!state.currentProjectId) {
-    logError(new Error("请先选择项目"));
+    logError(new Error("請先選擇項目"));
     return;
   }
   if (!state.currentMediaPath) {
-    logError(new Error("项目未关联媒体文件"));
+    logError(new Error("項目未關聯媒體文件"));
     return;
   }
   try {
     const deleteRanges = buildDeleteRangesFromDeletedKeys();
     if (!deleteRanges.length) {
-      logInfo("当前没有删除区间，建议先进行编辑");
+      logInfo("當前沒有刪除區間，建議先進行編輯");
     }
+    await persistTranscript();
     await persistSelection(deleteRanges);
     const payload = {
       project_id: state.currentProjectId,
@@ -3732,13 +3761,13 @@ async function handleCutSubmit(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!response.ok) throw new Error(`提交剪辑任务失败: ${response.status}`);
+    if (!response.ok) throw new Error(`提交剪輯任務失敗: ${response.status}`);
     const data = await response.json();
     state.currentTaskId = data.task_id;
     state.currentTaskType = "cut";
     startTaskPolling();
-    dom.cutStatus.textContent = "剪辑任务已提交，正在后台处理…";
-    logInfo("剪辑任务已提交");
+    dom.cutStatus.textContent = "剪輯任務已提交，正在後臺處理…";
+    logInfo("剪輯任務已提交");
   } catch (error) {
     logError(error);
   }
@@ -3746,7 +3775,7 @@ async function handleCutSubmit(event) {
 
 async function handleExportSrtOnly() {
   if (!state.currentProjectId) {
-    logError(new Error("请先选择项目"));
+    logError(new Error("請先選擇項目"));
     return;
   }
   try {
@@ -3754,15 +3783,18 @@ async function handleExportSrtOnly() {
       dom.exportSrtButton.disabled = true;
     }
     if (dom.cutStatus) {
-      dom.cutStatus.textContent = "正在导出字幕...";
+      dom.cutStatus.textContent = "正在導出字幕...";
     }
+    const deleteRanges = buildDeleteRangesFromDeletedKeys();
+    await persistTranscript();
+    await persistSelection(deleteRanges);
     const response = await fetch(`/api/projects/${state.currentProjectId}/export/srt`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ output_name: dom.cutOutputName?.value || "" }),
     });
     if (!response.ok) {
-      let message = `导出 SRT 失败 (${response.status})`;
+      let message = `導出 SRT 失敗 (${response.status})`;
       try {
         const errorData = await response.json();
         if (errorData?.error) {
@@ -3773,12 +3805,37 @@ async function handleExportSrtOnly() {
       }
       throw new Error(message);
     }
-    const data = await response.json();
-    logInfo(`字幕已导出：${data.file_name || data.output_path}`);
+    const blob = await response.blob();
+    
+    let fileName = "export.srt";
+    const disposition = response.headers.get("Content-Disposition");
+    if (disposition && disposition.indexOf('attachment') !== -1) {
+        const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+        const matches = filenameRegex.exec(disposition);
+        if (matches != null && matches[1]) { 
+            fileName = matches[1].replace(/['"]/g, '');
+        }
+    } else {
+        const outputName = dom.cutOutputName?.value || "";
+        if (outputName) {
+            fileName = `${outputName}.srt`;
+        }
+    }
+    
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(downloadUrl);
+    document.body.removeChild(a);
+    
+    logInfo(`字幕已下載：${fileName}`);
     if (dom.cutStatus) {
-      dom.cutStatus.textContent = "字幕导出完成";
+      dom.cutStatus.textContent = "字幕導出完成";
       setTimeout(() => {
-        if (dom.cutStatus?.textContent === "字幕导出完成") {
+        if (dom.cutStatus?.textContent === "字幕導出完成") {
           dom.cutStatus.textContent = "";
         }
       }, 2000);
@@ -3786,7 +3843,7 @@ async function handleExportSrtOnly() {
   } catch (error) {
     logError(error instanceof Error ? error : new Error(String(error)));
     if (dom.cutStatus) {
-      dom.cutStatus.textContent = "字幕导出失败";
+      dom.cutStatus.textContent = "字幕導出失敗";
     }
   } finally {
     if (dom.exportSrtButton) {
@@ -3796,7 +3853,7 @@ async function handleExportSrtOnly() {
 }
 
 // ---------------------------------------------------------------------------
-// 波形与音频解码
+// 波形與音頻解碼
 // ---------------------------------------------------------------------------
 
 async function refreshTimelineWaveform() {
@@ -3812,7 +3869,7 @@ async function refreshTimelineWaveform() {
   state.waveformSourceKey = null;
   state.timelineWaveform = null;
   state.timelineController.setWaveform(null);
-  state.timelineController.setStatus("等待上传生成波形预览");
+  state.timelineController.setStatus("等待上傳生成波形預覽");
 }
 
 async function prepareTimelineWaveform(request) {
@@ -3828,7 +3885,7 @@ async function prepareTimelineWaveform(request) {
     if (request.type === "file" && request.source) {
       const file = request.source;
       if (!(file instanceof File)) {
-        throw new Error("音频文件无效");
+        throw new Error("音頻文件無效");
       }
       key = getFileWaveformKey(file);
       const cached = state.waveformCache.get(key);
@@ -3860,12 +3917,12 @@ async function prepareTimelineWaveform(request) {
         `/api/projects/${projectId}/waveform${query ? `?${query}` : ""}`,
       );
       if (!response.ok) {
-        throw new Error(`获取波形失败: ${response.status}`);
+        throw new Error(`獲取波形失敗: ${response.status}`);
       }
       const data = await response.json();
       const payload = data?.waveform;
       if (!payload || !Array.isArray(payload.values)) {
-        throw new Error("服务器未返回有效的波形数据");
+        throw new Error("伺服器未返回有效的波形數據");
       }
       if (state.waveformTaskId !== taskId) {
         return;
@@ -3897,12 +3954,12 @@ async function prepareTimelineWaveform(request) {
       state.timelineController.showWaveformLoading();
       const response = await fetch(url);
       if (!response.ok) {
-        throw new Error(`波形请求失败: ${response.status}`);
+        throw new Error(`波形請求失敗: ${response.status}`);
       }
       arrayBuffer = await response.arrayBuffer();
     } else {
       state.timelineController.setWaveform(null);
-      state.timelineController.setStatus("请导入音视频以查看波形");
+      state.timelineController.setStatus("請導入音視頻以查看波形");
       return;
     }
 
@@ -3912,7 +3969,7 @@ async function prepareTimelineWaveform(request) {
 
     const audioBuffer = await decodeAudioBuffer(arrayBuffer);
     if (!audioBuffer) {
-      throw new Error("音频解码失败");
+      throw new Error("音頻解碼失敗");
     }
     const values = buildWaveformValues(audioBuffer);
     if (state.waveformTaskId !== taskId) {
@@ -3935,7 +3992,7 @@ async function prepareTimelineWaveform(request) {
   } catch (error) {
     if (state.waveformTaskId === taskId) {
       state.timelineController.setWaveform(null);
-      state.timelineController.setStatus("波形加载失败");
+      state.timelineController.setStatus("波形加載失敗");
       state.timelineWaveform = null;
       state.waveformSourceKey = null;
     }
@@ -4031,14 +4088,14 @@ async function decodeAudioBuffer(arrayBuffer) {
     audioContext.close();
     return buffer;
   } catch (error) {
-    console.warn("音频解码失败", error);
+    console.warn("音頻解碼失敗", error);
     audioContext.close();
     return null;
   }
 }
 
 // ---------------------------------------------------------------------------
-// 日志与提示
+// 日誌與提示
 // ---------------------------------------------------------------------------
 
 function logInfo(message) {
@@ -4090,18 +4147,18 @@ function formatTime(seconds) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-// 虚拟硬盘管理函数
+// 虛擬硬碟管理函數
 async function loadRamdiskStatus() {
   try {
     const response = await fetch("/api/ramdisk/status");
     if (!response.ok) {
-      console.warn("无法加载虚拟硬盘状态");
+      console.warn("無法加載虛擬硬碟狀態");
       return;
     }
     
     const data = await response.json();
     
-    // 更新UI - 显示配置文件中的值
+    // 更新UI - 顯示配置文件中的值
     if (dom.ramdiskEnabled) {
       dom.ramdiskEnabled.value = data.enabled ? "true" : "false";
     }
@@ -4109,37 +4166,37 @@ async function loadRamdiskStatus() {
       dom.ramdiskSizeGb.value = data.size_gb || 10;
     }
     
-    // 更新状态显示
+    // 更新狀態顯示
     if (dom.ramdiskStatus) {
       if (data.mounted) {
-        dom.ramdiskStatus.textContent = `当前状态: 已挂载 (${data.mount_point}, ${data.current_size_gb}GB)`;
+        dom.ramdiskStatus.textContent = `當前狀態: 已掛載 (${data.mount_point}, ${data.current_size_gb}GB)`;
         dom.ramdiskStatus.style.color = "#10b981";
       } else if (data.enabled) {
-        dom.ramdiskStatus.textContent = "当前状态: 未挂载";
+        dom.ramdiskStatus.textContent = "當前狀態: 未掛載";
         dom.ramdiskStatus.style.color = "#f59e0b";
       } else {
-        dom.ramdiskStatus.textContent = "当前状态: 已禁用";
+        dom.ramdiskStatus.textContent = "當前狀態: 已禁用";
         dom.ramdiskStatus.style.color = "var(--muted)";
       }
     }
   } catch (error) {
-    console.warn("加载虚拟硬盘状态失败", error);
+    console.warn("加載虛擬硬碟狀態失敗", error);
   }
 }
 
 async function handleRamdiskSaveConfig() {
   if (!dom.ramdiskEnabled || !dom.ramdiskSizeGb) {
-    logError(new Error("虚拟硬盘配置元素未找到"));
+    logError(new Error("虛擬硬碟配置元素未找到"));
     return;
   }
 
   try {
     if (dom.ramdiskSaveConfig) {
       dom.ramdiskSaveConfig.disabled = true;
-      dom.ramdiskSaveConfig.textContent = "应用中...";
+      dom.ramdiskSaveConfig.textContent = "應用中...";
     }
     if (dom.ramdiskStatus) {
-      dom.ramdiskStatus.textContent = "正在应用配置...";
+      dom.ramdiskStatus.textContent = "正在應用配置...";
       dom.ramdiskStatus.style.color = "#3b82f6";
     }
 
@@ -4147,7 +4204,7 @@ async function handleRamdiskSaveConfig() {
     const sizeGb = parseInt(dom.ramdiskSizeGb.value, 10);
 
     if (!Number.isFinite(sizeGb) || sizeGb < 1 || sizeGb > 64) {
-      logError(new Error("虚拟硬盘容量必须在1-64GB之间"));
+      logError(new Error("虛擬硬碟容量必須在1-64GB之間"));
       return;
     }
 
@@ -4159,23 +4216,23 @@ async function handleRamdiskSaveConfig() {
 
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data.message || `应用配置失败 (${response.status})`);
+      throw new Error(data.message || `應用配置失敗 (${response.status})`);
     }
 
-    logInfo(data.message || `虚拟硬盘配置已应用: ${enabled ? "启用" : "禁用"}, ${sizeGb}GB`);
+    logInfo(data.message || `虛擬硬碟配置已應用: ${enabled ? "啟用" : "禁用"}, ${sizeGb}GB`);
     
-    // 重新加载状态
+    // 重新加載狀態
     await loadRamdiskStatus();
   } catch (error) {
     logError(error instanceof Error ? error : new Error(String(error)));
     if (dom.ramdiskStatus) {
-      dom.ramdiskStatus.textContent = "应用失败";
+      dom.ramdiskStatus.textContent = "應用失敗";
       dom.ramdiskStatus.style.color = "#ef4444";
     }
   } finally {
     if (dom.ramdiskSaveConfig) {
       dom.ramdiskSaveConfig.disabled = false;
-      dom.ramdiskSaveConfig.textContent = "保存并应用";
+      dom.ramdiskSaveConfig.textContent = "保存並應用";
     }
   }
 }
@@ -4191,7 +4248,7 @@ async function handleRamdiskSaveConfig() {
     const label =
       dom.transcribeSubmitButton.textContent?.trim() ||
       state.transcribeButtonDefaultLabel ||
-      "转写";
+      "轉寫";
     if (dom.transcribeSubmitButton.dataset) {
       dom.transcribeSubmitButton.dataset.defaultLabel = label;
     }

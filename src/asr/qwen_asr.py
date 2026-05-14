@@ -60,8 +60,12 @@ class QwenASRBundle:
             "-loglevel", "error",
             "-"
         ]
-        proc = subprocess.run(cmd, capture_output=True, check=True)
-        return np.frombuffer(proc.stdout, dtype=np.float32)
+        try:
+            proc = subprocess.run(cmd, capture_output=True, check=True)
+            return np.frombuffer(proc.stdout, dtype=np.float32)
+        except subprocess.CalledProcessError as e:
+            err_msg = e.stderr.decode('utf-8', errors='ignore').strip() if e.stderr else str(e)
+            raise RuntimeError(f"FFmpeg failed to load audio from {path}. Error: {err_msg}\nCommand: {' '.join(cmd)}") from e
 
     def transcribe(
         self, input_path: str | Path, *, language_hint: Optional[str] = None

@@ -1,4 +1,4 @@
-"""波形数据生成辅助模块。"""
+"""波形數據生成輔助模塊。"""
 
 from __future__ import annotations
 
@@ -12,12 +12,12 @@ import numpy as np
 
 from ..ffmpeg.utils import ensure_ffmpeg_available
 
-# 单次读取 256KB，既能保持流式处理，又不会造成过多系统调用。
+# 單次讀取 256KB，既能保持流式處理，又不會造成過多系統調用。
 _READ_CHUNK_BYTES = 256 * 1024
 
 
 class WaveformGenerationError(RuntimeError):
-    """波形生成失败时的异常类型。"""
+    """波形生成失敗時的異常類型。"""
 
 
 def generate_waveform_payload(
@@ -27,22 +27,22 @@ def generate_waveform_payload(
     target_points: int = 2000,
     sample_rate: int = 400,
 ) -> Dict[str, Any]:
-    """生成媒体文件的波形概览数据。
+    """生成媒體文件的波形概覽數據。
 
-    参数:
-        media_path: 媒体文件路径。
-        ffmpeg_binary: ffmpeg 可执行文件路径。
-        target_points: 期望压缩后的波形点数量。
-        sample_rate: ffmpeg 下采样的采样率，越小越省内存。
+    參數:
+        media_path: 媒體文件路徑。
+        ffmpeg_binary: ffmpeg 可執行文件路徑。
+        target_points: 期望壓縮後的波形點數量。
+        sample_rate: ffmpeg 下採樣的採樣率，越小越省內存。
     """
 
     media_path = media_path.expanduser().resolve()
     if not media_path.exists():
-        raise FileNotFoundError(f"媒体文件不存在: {media_path}")
+        raise FileNotFoundError(f"媒體文件不存在: {media_path}")
     if target_points <= 0:
-        raise ValueError("target_points 必须为正数")
+        raise ValueError("target_points 必須為正數")
     if sample_rate <= 0:
-        raise ValueError("sample_rate 必须为正数")
+        raise ValueError("sample_rate 必須為正數")
 
     ensure_ffmpeg_available(ffmpeg_binary)
 
@@ -86,7 +86,7 @@ def generate_waveform_payload(
 
     if return_code != 0:
         stderr_text = stderr_output.decode("utf-8", errors="ignore").strip()
-        raise WaveformGenerationError(f"FFmpeg 生成波形失败: {stderr_text or return_code}")
+        raise WaveformGenerationError(f"FFmpeg 生成波形失敗: {stderr_text or return_code}")
 
     if sample_count == 0:
         return {
@@ -114,7 +114,7 @@ def generate_waveform_payload(
 
 
 def _read_waveform_samples(stream: Any) -> Tuple[np.ndarray, int]:
-    """读取 FFmpeg 输出的浮点 PCM 数据。"""
+    """讀取 FFmpeg 輸出的浮點 PCM 數據。"""
 
     chunks: Iterable[bytes]
     chunks = iter(lambda: stream.read(_READ_CHUNK_BYTES), b"")
@@ -144,7 +144,7 @@ def _compress_waveform(
     sample_count: int,
     target_points: int,
 ) -> Tuple[list[float], float, float]:
-    """对波形采样进行压缩，返回最大值序列及统计信息。"""
+    """對波形採樣進行壓縮，返回最大值序列及統計信息。"""
 
     if sample_count == 0:
         return [], 0.0, 0.0

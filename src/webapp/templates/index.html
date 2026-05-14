@@ -1,8 +1,8 @@
-<html lang="zh-Hans">
+<html lang="{{ ui_language }}">
 <head>
 <meta charset="utf-8"/>
 <title>Subtitle Cut</title>
-<link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet"/>
+<link href="{{ url_for('static', path='style.css') }}" rel="stylesheet"/>
 </head>
 <body>
 <div class="app-shell">
@@ -12,23 +12,24 @@
 </div>
 <div class="sidebar-section sidebar-file-controls">
 <div class="sidebar-buttons">
-<button class="ghost-button sidebar-button" id="file-open" type="button">打开工程文件</button>
+<button class="ghost-button sidebar-button" id="file-open" type="button">打開工程文件</button>
 <button class="ghost-button sidebar-button" id="file-save" type="button">保存工程文件</button>
 <button class="ghost-button sidebar-button" id="file-save-as" type="button">另存工程文件</button>
-<button class="ghost-button sidebar-button" id="file-close" type="button">关闭工程文件</button>
+<button class="ghost-button sidebar-button" id="file-close" type="button">關閉工程文件</button>
 </div>
 </div>
 <section class="operation-strip sidebar-section">
 <form class="operation-strip__group" id="upload-form">
 <label class="operation-strip__file">
 <input accept="audio/*,video/*" id="media-file" required="" type="file"/>
-<span>导入音视频</span>
+<span>導入音視頻</span>
 </label>
 <label class="operation-strip__field operation-strip__field--compact">
-<span>识别引擎</span>
+<span>識別引擎</span>
 <select id="engine-select">
 <!-- // BEGIN-EDIT -->
-<option selected="" value="qwen3-asr">Qwen3-ASR</option>
+<option value="qwen3-asr">Qwen3-ASR</option>
+<option selected="" value="qwen-mini">Qwen3-Mini (API)</option>
 <!-- // END-EDIT -->
 </select>
 </label>
@@ -51,32 +52,46 @@
 <option value="yue">粵語 (Cantonese)</option>
 </select>
 </label>
+<label class="operation-strip__field operation-strip__field--compact" id="diarize-container">
+<span>說話者分離</span>
+<select id="diarize-select">
+<option selected="" value="false">停用</option>
+<option value="true">啟用</option>
+</select>
+</label>
+<label class="operation-strip__field operation-strip__field--compact" id="simplified-container">
+<span>輸出字體</span>
+<select id="simplified-select">
+<option selected="" value="false">繁體中文</option>
+<option value="true">簡體中文</option>
+</select>
+</label>
 <label class="operation-strip__field operation-strip__field--compact">
-<span>运行设备</span>
+<span>運行設備</span>
 <select id="device-select">
-<option value="auto">自动</option>
+<option value="auto">自動</option>
 <option selected="" value="cuda">CUDA</option>
 <option value="cpu">CPU</option>
 </select>
 </label>
-<button class="primary-button operation-strip__primary operation-strip__primary--wide" type="submit">转写</button>
+<button class="primary-button operation-strip__primary operation-strip__primary--wide" type="submit">轉寫</button>
 <div class="operation-strip__status operation-strip__status--fixed">
 <span class="task-status" id="task-status"></span>
 </div>
 </form>
 <form class="operation-strip__group" id="cut-form">
 <div class="operation-strip__actions operation-strip__checks--horizontal">
-<button class="ghost-button sidebar-button" id="export-srt-button" type="button">导出 SRT</button>
+<button class="ghost-button sidebar-button" id="export-srt-button" type="button">導出 SRT</button>
 </div>
 <label class="operation-strip__field operation-strip__field--narrow">
-<span>输出文件名</span>
-<input id="cut-output-name" placeholder="可选，默认使用 project_id" type="text"/>
+<span>輸出文件名</span>
+<input id="cut-output-name" placeholder="可選，默認使用 project_id" type="text"/>
 </label>
-<button class="primary-button operation-strip__primary operation-strip__primary--wide" type="submit">生成剪辑</button>
+<button class="primary-button operation-strip__primary operation-strip__primary--wide" type="submit">生成剪輯</button>
 <div class="operation-strip__status operation-strip__status--fixed">
 <span class="task-status" id="cut-status"></span>
 </div>
-<button class="ghost-button sidebar-button operation-strip__secondary" id="menu-open-options" type="button">选项设置</button>
+<button class="ghost-button sidebar-button operation-strip__secondary" id="menu-open-options" type="button">選項設置</button>
 </form>
 </section>
 </aside>
@@ -85,9 +100,9 @@
 <section class="preview-column">
 <div class="panel preview-panel">
 <header class="panel-header">
-<h3>视频预览</h3>
+<h3>視頻預覽</h3>
 <div class="panel-meta">
-<button class="ghost-button" id="preview-fit" type="button">适应窗口</button>
+<button class="ghost-button" id="preview-fit" type="button">適應窗口</button>
 <button class="ghost-button" id="preview-original" type="button">原始比例</button>
 </div>
 </header>
@@ -97,30 +112,30 @@
 <section class="manuscript-column">
 <div class="panel transcript-panel">
 <header class="panel-header manuscript-header">
-<h3>文稿编辑</h3>
+<h3>文稿編輯</h3>
 <div class="manuscript-actions">
-<button class="ghost-button action-compact" id="manuscript-delete-silence" type="button">一键删除无声片段</button>
+<button class="ghost-button action-compact" id="manuscript-delete-silence" type="button">一鍵刪除無聲片段</button>
 <div class="manuscript-filler-group">
-<button class="ghost-button action-compact" id="manuscript-delete-filler" type="button">一键去除水词</button>
+<button class="ghost-button action-compact" id="manuscript-delete-filler" type="button">一鍵去除水詞</button>
 <input class="manuscript-filler-input" id="filler-words" placeholder="例如：呃 呀 就是" type="text"/>
-<button class="ghost-button icon-button" id="filler-settings" title="常用水词设置" type="button">设置</button></div>
-<button class="ghost-button action-compact" id="manuscript-restore-all" type="button" style="margin-left: auto;">全部复原</button>
+<button class="ghost-button icon-button" id="filler-settings" title="常用水詞設置" type="button">設置</button></div>
+<button class="ghost-button action-compact" id="manuscript-restore-all" type="button" style="margin-left: auto;">全部復原</button>
 </div>
 </header>
 <div class="segments-container" id="segments" tabindex="0"></div>
 <div class="manuscript-footer">
 <div class="manuscript-footer-inner"><div class="manuscript-footer-left">
 <div class="manuscript-search search-box">
-<input id="transcript-search" placeholder="输入查找内容" type="text"/>
+<input id="transcript-search" placeholder="輸入查找內容" type="text"/>
 <div class="search-actions" id="search-actions">
-<button class="ghost-button" id="search-skip" type="button">跳过</button>
-<button class="ghost-button" id="search-delete-one" type="button">删除</button>
-<button class="ghost-button" id="search-delete-all" type="button">删除全部</button>
+<button class="ghost-button" id="search-skip" type="button">跳過</button>
+<button class="ghost-button" id="search-delete-one" type="button">刪除</button>
+<button class="ghost-button" id="search-delete-all" type="button">刪除全部</button>
 </div>
 </div>
 </div><label class="toggle-deleted" for="toggle-show-deleted">
 <input id="toggle-show-deleted" type="checkbox"/>
-                显示删除内容
+                顯示刪除內容
               </label></div></div>
 </div>
 </section>
@@ -128,11 +143,11 @@
 <section class="timeline-row">
 <div class="panel timeline-panel">
 <header class="panel-header">
-<h3>时间轴</h3>
+<h3>時間軸</h3>
 <div class="panel-meta">
-<button class="ghost-button" id="timeline-zoom-out" type="button">缩小</button>
+<button class="ghost-button" id="timeline-zoom-out" type="button">縮小</button>
 <button class="ghost-button" id="timeline-zoom-in" type="button">放大</button>
-<button class="ghost-button" id="timeline-fit" type="button">自适应</button>
+<button class="ghost-button" id="timeline-fit" type="button">自適應</button>
 </div>
 </header>
 <div class="timeline-canvas" id="timeline-track"></div>
@@ -142,62 +157,62 @@
 </div>
 <div aria-hidden="true" aria-modal="true" class="log-drawer" id="log-drawer" role="dialog">
 <div class="log-drawer__header">
-<span>活动日志</span>
-<button class="ghost-button" id="log-close" type="button">关闭</button>
+<span>活動日誌</span>
+<button class="ghost-button" id="log-close" type="button">關閉</button>
 </div>
 <div class="log" id="activity-log"></div>
 </div>
 <div aria-hidden="true" class="options-backdrop" id="options-backdrop"></div>
 <div aria-hidden="true" aria-modal="true" class="options-panel" id="options-panel" role="dialog">
 <div class="options-panel__header">
-<span>选项设置</span>
-<button class="ghost-button" id="options-close" type="button">关闭</button>
+<span>選項設置</span>
+<button class="ghost-button" id="options-close" type="button">關閉</button>
 </div>
 <div class="options-panel__body">
 <form id="options-form">
 <label class="options-field">
-<span>重新编码策略</span>
+<span>重新編碼策略</span>
 <select id="cut-reencode">
-<option value="auto">自动选择</option>
-<option value="copy">直接拷贝</option>
+<option value="auto">自動選擇</option>
+<option value="copy">直接拷貝</option>
 <option selected="" value="nvenc">NVIDIA NVENC (GPU)</option>
-<option value="reencode">CPU编码 (libx264)</option>
+<option value="reencode">CPU編碼 (libx264)</option>
 </select>
 </label>
 <label class="options-field">
-<span>导入时预分割</span>
+<span>導入時預分割</span>
 <select id="import-presplit-mode">
-<option selected="" value="auto">自动（20分钟以上启用）</option>
+<option selected="" value="auto">自動（20分鐘以上啟用）</option>
 <option value="disabled">禁用（不分割）</option>
-<option value="custom">自定义段数</option>
+<option value="custom">自定義段數</option>
 </select>
 </label>
 <label class="options-field" id="presplit-segments-field" style="display:none;">
-<span>分割段数</span>
+<span>分割段數</span>
 <input id="presplit-segments" min="2" step="1" type="number" value="10"/>
 </label>
 <label class="options-field">
 <span>零交叉吸附</span>
 <select id="cut-snap-zero">
-<option selected="" value="true">启用</option>
+<option selected="" value="true">啟用</option>
 <option value="false">禁用</option>
 </select>
 </label>
 <label class="options-field">
-<span>音频交叉淡化 (ms)（启用此参数会导致视频输出错误）</span>
+<span>音頻交叉淡化 (ms)（啟用此參數會導致視頻輸出錯誤）</span>
 <input id="cut-xfade-ms" min="0" step="10" type="number" value="0"/>
 </label>
 <label class="options-field">
-<span>剪辑批次大小</span>
+<span>剪輯批次大小</span>
 <input id="cut-chunk-size" min="1" step="1" type="number" value="20"/>
 </label>
 <div class="options-field options-field--full">
-<span style="font-weight: 600; font-size: 1rem;">虚拟硬盘设置</span>
+<span style="font-weight: 600; font-size: 1rem;">虛擬硬碟設置</span>
 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
 <label style="display: flex; flex-direction: column; gap: 6px;">
-<span style="font-size: 0.85rem; color: var(--muted);">启用状态</span>
+<span style="font-size: 0.85rem; color: var(--muted);">啟用狀態</span>
 <select id="ramdisk-enabled" style="padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--fg);">
-<option value="true">启用</option>
+<option value="true">啟用</option>
 <option value="false">禁用</option>
 </select>
 </label>
@@ -207,11 +222,11 @@
 </label>
 </div>
 <div style="display: flex; gap: 8px; margin-top: 12px; align-items: center;">
-<button class="primary-button" id="ramdisk-save-config" type="button">保存并应用</button>
+<button class="primary-button" id="ramdisk-save-config" type="button">保存並應用</button>
 <span id="ramdisk-status" style="font-size: 0.85rem; color: var(--muted);"></span>
 </div>
 <div style="font-size: 12px; color: #888; margin-top: 8px; line-height: 1.5;">
-点击"保存并应用"后立即生效：启用时会创建虚拟硬盘，禁用时会卸载虚拟硬盘
+點擊"保存並應用"後立即生效：啟用時會創建虛擬硬碟，禁用時會卸載虛擬硬碟
 </div>
 </div>
 </form>
@@ -221,27 +236,27 @@
 <div aria-hidden="true" aria-modal="true" class="snapshot-panel" id="snapshot-panel" role="dialog">
 <div class="snapshot-panel__header">
 <span>版本管理</span>
-<button class="ghost-button" id="snapshot-close" type="button">关闭</button>
+<button class="ghost-button" id="snapshot-close" type="button">關閉</button>
 </div>
 <div class="snapshot-panel__body">
 <div class="snapshot-panel__actions">
-<button class="primary-button" id="snapshot-create" type="button">另存为版本</button>
+<button class="primary-button" id="snapshot-create" type="button">另存為版本</button>
 </div>
-<p class="snapshot-empty hidden" id="snapshot-empty">还没有保存的版本，点击“另存为版本”开始管理。</p>
+<p class="snapshot-empty hidden" id="snapshot-empty">還沒有保存的版本，點擊「另存為版本」開始管理。</p>
 <ul class="snapshot-list" id="snapshot-list"></ul>
 </div>
 </div>
 <div aria-hidden="true" class="file-open-backdrop" id="file-open-backdrop"></div>
 <div aria-hidden="true" aria-modal="true" class="file-open-panel" id="file-open-panel" role="dialog">
 <div class="file-open-panel__header">
-<span>打开工程文件</span>
-<button class="ghost-button" id="file-open-close" type="button">关闭</button>
+<span>打開工程文件</span>
+<button class="ghost-button" id="file-open-close" type="button">關閉</button>
 </div>
 <div class="file-open-panel__body">
 <div class="file-open-columns">
 <section class="file-open-section">
 <header class="file-open-section__header">
-<span>项目</span>
+<span>項目</span>
 <button class="ghost-button" id="file-open-refresh" type="button">刷新</button>
 </header>
 <ul class="open-project-list" id="open-project-list"></ul>
@@ -259,18 +274,18 @@
 <div aria-hidden="true" class="common-fillers-backdrop" id="common-fillers-backdrop"></div>
 <div aria-hidden="true" aria-modal="true" class="common-fillers-panel" id="common-fillers-panel" role="dialog">
 <div class="common-fillers-panel__header">
-<span>常用水词列表</span>
-<button class="ghost-button" id="common-fillers-close" type="button">关闭</button>
+<span>常用水詞列表</span>
+<button class="ghost-button" id="common-fillers-close" type="button">關閉</button>
 </div>
 <div class="common-fillers-panel__body">
-<p class="panel-hint">使用空格、顿号或换行分隔多个水词，保存后将在所有文稿中复用。</p>
-<textarea id="common-fillers-input" placeholder="例如：呃 呀 就是 其实" rows="6"></textarea>
+<p class="panel-hint">使用空格、頓號或換行分隔多個水詞，保存後將在所有文稿中復用。</p>
+<textarea id="common-fillers-input" placeholder="例如：呃 呀 就是 其實" rows="6"></textarea>
 </div>
 <div class="common-fillers-panel__footer">
 <button class="primary-button" id="common-fillers-save" type="button">保存</button>
 </div>
 </div>
-<script src="{{ url_for('static', filename='app.js') }}" type="module"></script>
-<script src="{{ url_for('static', filename='presplit-options.js') }}"></script>
+<script src="{{ url_for('static', path='app.js') }}?v=1" type="module"></script>
+<script src="{{ url_for('static', path='presplit-options.js') }}"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-"""Web 应用的数据存储抽象。"""
+"""Web 應用的數據存儲抽象。"""
 
 from __future__ import annotations
 
@@ -42,14 +42,14 @@ class ProjectFile:
 
 
 class ProjectStorage:
-    """面向 Web UI 的 SQLite 存储封装。"""
+    """面向 Web UI 的 SQLite 存儲封裝。"""
 
     def __init__(self, database_path: Path) -> None:
         self.database_path = database_path
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
 
     # ---------------------------------------------------------------------
-    # 基础设施
+    # 基礎設施
     # ---------------------------------------------------------------------
     def initialize(self) -> None:
         with self._connect() as connection:
@@ -115,7 +115,7 @@ class ProjectStorage:
         return datetime.now(timezone.utc).isoformat()
 
     # ------------------------------------------------------------------
-    # 项目管理
+    # 項目管理
     # ------------------------------------------------------------------
     def list_projects(self) -> List[Dict[str, Any]]:
         with self._connect() as connection:
@@ -148,7 +148,7 @@ class ProjectStorage:
             self._insert_snapshot(cursor, project_id, 1, "transcript", transcript)
             default_payload = {
                 "delete_ranges": [],
-                "metadata": {"label": "默认工程文件"},
+                "metadata": {"label": "默認工程文件"},
             }
             cursor.execute(
                 """
@@ -157,7 +157,7 @@ class ProjectStorage:
                 """,
                 (
                     project_id,
-                    "默认工程文件",
+                    "默認工程文件",
                     json.dumps(default_payload, ensure_ascii=False),
                     created_at,
                     created_at,
@@ -173,7 +173,7 @@ class ProjectStorage:
             "default_project_file": {
                 "id": default_file_id,
                 "project_id": project_id,
-                "name": "默认工程文件",
+                "name": "默認工程文件",
                 "payload": default_payload,
                 "revision": 1,
                 "created_at": created_at,
@@ -434,7 +434,7 @@ class ProjectStorage:
 
 
     # ------------------------------------------------------------------
-    # 内部工具
+    # 內部工具
     # ------------------------------------------------------------------
     def _insert_snapshot(
         self,

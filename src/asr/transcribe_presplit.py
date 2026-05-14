@@ -74,9 +74,12 @@ def get_video_duration(video_path: Path, ffprobe_binary: str = "ffprobe") -> flo
         )
         duration = float(result.stdout.strip())
         return duration
-    except (subprocess.CalledProcessError, ValueError) as e:
-        LOGGER.error("Failed to get video duration: %s", e)
-        raise RuntimeError(f"Failed to get video duration: {e}")
+    except subprocess.CalledProcessError as e:
+        LOGGER.error("Failed to get video duration: %s", e.stderr)
+        raise RuntimeError(f"Failed to get video duration: {e.stderr[:200]}") from e
+    except ValueError as e:
+        LOGGER.error("Failed to parse video duration: %s", e)
+        raise RuntimeError(f"Failed to parse video duration: {e}") from e
 
 
 def transcribe_with_presplit(

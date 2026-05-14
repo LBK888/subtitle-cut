@@ -1,4 +1,4 @@
-"""后台任务接口（WhisperX 转录）。"""
+"""後臺任務接口（WhisperX 轉錄）。"""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ class TaskState:
 
 
 class TaskManager:
-    """简易后台任务管理器（单机）。"""
+    """簡易後臺任務管理器（單機）。"""
 
     def __init__(self, storage: ProjectStorage, working_dir: Path, exports_dir: Optional[Path] = None) -> None:
         self.storage = storage
@@ -96,10 +96,10 @@ class TaskManager:
         self.lock = threading.Lock()
     
     def update_working_dir(self, new_working_dir: Path) -> None:
-        """更新工作目录路径"""
+        """更新工作目錄路徑"""
         self.working_dir = new_working_dir
         self.working_dir.mkdir(parents=True, exist_ok=True)
-        LOGGER.info("TaskManager工作目录已更新: %s", self.working_dir)
+        LOGGER.info("TaskManager工作目錄已更新: %s", self.working_dir)
 
     def submit_transcribe(
         self,
@@ -110,6 +110,8 @@ class TaskManager:
         language: str = "auto",
         presplit_mode: str = "auto",
         presplit_segments: int = 10,
+        diarize: bool = False,
+        simplified: bool = False,
     ) -> TaskState:
         task_id = uuid.uuid4().hex
         state = TaskState(id=task_id, status="queued")
@@ -128,7 +130,7 @@ class TaskManager:
 
         thread = threading.Thread(
             target=self._run_transcribe_task,
-            args=(state, media_path, engine, model, device, language, presplit_mode, presplit_segments),
+            args=(state, media_path, engine, model, device, language, presplit_mode, presplit_segments, diarize, simplified),
             daemon=True,
         )
         thread.start()
@@ -194,7 +196,7 @@ class TaskManager:
 
     @contextlib.contextmanager
     def _stage_input_on_ramdisk(self, source: Path, state: TaskState) -> Iterator[Path]:
-        # 检查全局虚拟硬盘开关
+        # 檢查全局虛擬硬碟開關
         from .ramdisk import get_ramdisk_manager
         ramdisk_mgr = get_ramdisk_manager()
         if not ramdisk_mgr.enabled:
@@ -269,7 +271,7 @@ class TaskManager:
 
             destination = mount_root / source.name
             LOGGER.info("staging input %s to RAM disk %s", source, destination)
-            state.message = "正在将源视频加载到内存..."
+            state.message = "正在將源視頻加載到內存..."
             shutil.copy2(source, destination)
             state.metadata["ramdisk_used"] = True
             state.metadata["ramdisk_mount"] = mount_point
@@ -303,14 +305,7 @@ class TaskManager:
             except Exception:
                 LOGGER.exception("failed to detach RAM disk %s", mount_point)
 
-    def _export_exists(self, stem: str) -> bool:
-        suffixes = (".mp4", ".srt", ".vtt")
-        for ext in suffixes:
-            if (self.exports_dir / f"{stem}{ext}").exists():
-                return True
-        return False
-
-    def resolve_export_stem(self, base_name: str, project_id: int) -> str:
+    def resolve_export_stem(self, base_name: str, project_id: int, extension: str) -> str:
         base = (base_name or "").strip()
         if not base:
             base = f"project_{project_id}"
@@ -321,7 +316,7 @@ class TaskManager:
 
         candidate = base
         counter = 1
-        while self._export_exists(candidate):
+        while (self.exports_dir / f"{candidate}{extension}").exists():
             candidate = f"{base}_{counter}"
             counter += 1
         return candidate
@@ -336,12 +331,17 @@ class TaskManager:
         language: str = "auto",
         presplit_mode: str = "auto",
         presplit_segments: int = 10,
+        diarize: bool = False,
+        simplified: bool = False,
     ) -> None:
         engine_key = (engine or "whisperx").lower()
-        engine_label = "WhisperX" if engine_key == "whisperx" else "Qwen3-ASR"
+        if engine_key == "qwen-mini":
+            engine_label = "Qwen3-Mini (API)"
+        else:
+            engine_label = "WhisperX" if engine_key == "whisperx" else "Qwen3-ASR"
 
         state.status = "running"
-        state.message = f"正在执行 {engine_label} 转录"
+        state.message = f"正在執行 {engine_label} 轉錄"
         state.metadata = {
             "engine": engine_key,
             "engine_label": engine_label,
@@ -363,7 +363,7 @@ class TaskManager:
                 clamped = max(0.0, min(1.0, fraction))
                 state.progress = max(state.progress, min(0.95, clamped))
 
-            # 根据用户选项决定是否启用预分割
+            # 根據用戶選項決定是否啟用預分割
             if presplit_mode == "disabled":
                 enable_presplit = False
                 LOGGER.info("Presplit disabled by user")
@@ -374,25 +374,57 @@ class TaskManager:
                 enable_presplit = True
                 LOGGER.info("Presplit enabled (auto mode)")
             
-            # 使用预分割转录（支持视频和音频）
-            transcript, presplit_meta = transcribe_with_presplit(
-                media_path,
-                self.working_dir,
-                engine=engine_key,
-                model=model,
-                device=device,
-                options={"language": language},
-                enable_presplit=enable_presplit,
-                custom_segment_count=presplit_segments if presplit_mode == "custom" else None,
-                progress_callback=_update_transcribe_progress,
-            )
+            if engine_key == "qwen-mini":
+                import requests
+                import tempfile
+                import os
+                from ..core.srt_vtt import load_srt
+                
+                state.message = "正在呼叫 Qwen3-Mini API 進行辨識..."
+                from .config import get_app_config
+                qwen_port = get_app_config().get("qwen_asr_port", 8001)
+                LOGGER.info(f"Calling Qwen3-Mini API at http://127.0.0.1:{qwen_port}/api/transcribe")
+                
+                resp = requests.post(f"http://127.0.0.1:{qwen_port}/api/transcribe", json={
+                    "audio_path": str(media_path),
+                    "language": language if language != "auto" else None,
+                    "diarize": diarize,
+                    "simplified": simplified
+                }, timeout=3600)
+                resp.raise_for_status()
+                data = resp.json()
+                srt_content = data.get("srt_content", "")
+                
+                if not srt_content.strip():
+                    raise ValueError("Qwen3-Mini API returned empty subtitles")
+                    
+                fd, tmp_srt_path = tempfile.mkstemp(suffix=".srt")
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(srt_content)
+                
+                transcript = load_srt(tmp_srt_path)
+                os.remove(tmp_srt_path)
+                presplit_meta = None
+            else:
+                # 使用預分割轉錄（支持視頻和音頻）
+                transcript, presplit_meta = transcribe_with_presplit(
+                    media_path,
+                    self.working_dir,
+                    engine=engine_key,
+                    model=model,
+                    device=device,
+                    options={"language": language},
+                    enable_presplit=enable_presplit,
+                    custom_segment_count=presplit_segments if presplit_mode == "custom" else None,
+                    progress_callback=_update_transcribe_progress,
+                )
             output_path = self.working_dir / f"transcript_{state.id}.json"
             output_path.write_text(
                 json.dumps(transcript.model_dump(), indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
             
-            # 记录预分割信息
+            # 記錄預分割信息
             if presplit_meta:
                 LOGGER.info("Transcription used presplit: %d segments, media_type: %s",
                            presplit_meta.get("num_segments", 0),
@@ -401,10 +433,10 @@ class TaskManager:
             state.progress = 1.0
             state.status = "completed"
             
-            # 构建转录结果，包含预分割元数据
+            # 構建轉錄結果，包含預分割元數據
             transcript_dict = transcript.model_dump()
             if presplit_meta:
-                # 将预分割元数据添加到转录payload中
+                # 將預分割元數據添加到轉錄payload中
                 if "_metadata" not in transcript_dict:
                     transcript_dict["_metadata"] = {}
                 transcript_dict["_metadata"]["presplit_metadata"] = presplit_meta
@@ -415,7 +447,7 @@ class TaskManager:
                 "output_path": str(output_path),
                 "media_path": str(media_path),
             }
-            state.message = f"{engine_label} 转录完成"
+            state.message = f"{engine_label} 轉錄完成"
             LOGGER.info(
                 "task %s completed asr (engine=%s) -> %s",
                 state.id,
@@ -496,13 +528,10 @@ class TaskManager:
         chunk_size: int,
     ) -> None:
         state.status = "running"
-        state.message = "正在准备剪辑"
+        state.message = "正在準備剪輯"
         state.progress = 0.1
 
         try:
-            output_stem = self.resolve_export_stem(base_name, project_id)
-            state.metadata["output_stem"] = output_stem
-
             try:
                 has_video, has_audio = probe_media_streams(input_path, "ffmpeg")
             except Exception:
@@ -518,7 +547,10 @@ class TaskManager:
                 chosen_ext = ".mp4"
             state.metadata["output_extension"] = chosen_ext
 
-            # 从转录payload中获取预分割元数据
+            output_stem = self.resolve_export_stem(base_name, project_id, chosen_ext)
+            state.metadata["output_stem"] = output_stem
+
+            # 從轉錄payload中獲取預分割元數據
             presplit_metadata = transcript_payload.get("_metadata", {}).get("presplit_metadata")
             
             if presplit_metadata:
@@ -527,14 +559,14 @@ class TaskManager:
                 LOGGER.info("  media_type: %s", presplit_metadata.get("media_type"))
                 LOGGER.info("  num_segments: %s", presplit_metadata.get("num_segments"))
                 
-                # 获取ASR任务目录（片段文件所在目录）
+                # 獲取ASR任務目錄（片段文件所在目錄）
                 asr_task_dir = transcript_payload.get("_metadata", {}).get("asr_task_dir")
                 if asr_task_dir:
                     LOGGER.info("  asr_task_dir: %s", asr_task_dir)
-                    # 更新segments中的文件路径为绝对路径
+                    # 更新segments中的文件路徑為絕對路徑
                     for seg in presplit_metadata.get("segments", []):
                         if "file" in seg and not Path(seg["file"]).is_absolute():
-                            # 如果是相对路径，转换为绝对路径
+                            # 如果是相對路徑，轉換為絕對路徑
                             seg["file"] = str(Path(asr_task_dir) / seg["file"])
             else:
                 LOGGER.info("No presplit metadata found in transcript payload")
@@ -568,7 +600,7 @@ class TaskManager:
 
             LOGGER.info("cut task %s keep ranges: %s", state.id, keep_list)
             if not keep_list:
-                raise ValueError("无有效保留区间，无法执行剪辑")
+                raise ValueError("無有效保留區間，無法執行剪輯")
 
             should_warn_nvenc = (
                 reencode.strip().lower() == "nvenc"
@@ -586,7 +618,7 @@ class TaskManager:
                     LOGGER.info("Cut progress: %.1f%% (FFmpeg: %.1f%%)", new_progress * 100, clamped * 100)
                 state.progress = new_progress
 
-            # 判断是否可以使用预分割导出
+            # 判斷是否可以使用預分割導出
             LOGGER.info("=" * 60)
             LOGGER.info("EXPORT METHOD SELECTION")
             LOGGER.info("presplit_metadata exists: %s", presplit_metadata is not None)
@@ -598,10 +630,10 @@ class TaskManager:
             LOGGER.info("keep_ranges count: %d", len(keep_list))
             LOGGER.info("=" * 60)
             
-            # 预分割策略：通过增加片段数，让每个片段的剪辑区间更少
-            # 这样可以多线程并行处理，充分利用CPU多核
+            # 預分割策略：通過增加片段數，讓每個片段的剪輯區間更少
+            # 這樣可以多線程並行處理，充分利用CPU多核
             
-            # 对于大量剪辑区间，提示CPU编码的优势
+            # 對於大量剪輯區間，提示CPU編碼的優勢
             if len(keep_list) > 1000 and reencode.strip().lower() == "nvenc":
                 LOGGER.warning("=" * 60)
                 LOGGER.warning("PERFORMANCE TIP:")
@@ -646,18 +678,18 @@ class TaskManager:
                         if codec_choice == "nvenc":
                             video_codec = "h264_nvenc"
                             use_nvenc = True
-                            state.message = "正在使用预分割片段并行导出视频（NVENC GPU加速）"
+                            state.message = "正在使用預分割片段並行導出視頻（NVENC GPU加速）"
                         else:
                             video_codec = "libx264"
                             use_nvenc = False
-                            state.message = "正在使用预分割片段带行导出视频（CPU编码）"
+                            state.message = "正在使用預分割片段帶行導出視頻（CPU編碼）"
                         
                         LOGGER.info("Using VIDEO presplit export with %d segments, codec: %s", len(segments), video_codec)
                         keep_time_ranges = [(start, end) for start, end in keep_list]
                         
                         try:
                             if use_nvenc:
-                                # NVENC使用crf参数（对应NVENC的cq）和preset（对应NVENC的preset）
+                                # NVENC使用crf參數（對應NVENC的cq）和preset（對應NVENC的preset）
                                 export_with_video_segments(
                                     segments, keep_time_ranges, output_media,
                                     ffmpeg_binary="ffmpeg", video_codec="h264_nvenc", audio_codec="aac",
@@ -673,17 +705,17 @@ class TaskManager:
                         except Exception as e:
                             if use_nvenc and ("h264_nvenc" in str(e) or "nvenc" in str(e).lower()):
                                 LOGGER.warning("NVENC encoding failed, falling back to libx264: %s", e)
-                                state.message = "正在使用预分割片段并行导出视频（CPU编码）"
+                                state.message = "正在使用預分割片段並行導出視頻（CPU編碼）"
                                 export_with_video_segments(
                                     segments, keep_time_ranges, output_media,
                                     ffmpeg_binary="ffmpeg", video_codec="libx264", audio_codec="aac",
                                     crf=18, preset="medium", progress_callback=_update_cut_progress,
                                 )
-                                encoder_note = "使用CPU编码（NVENC不可用）"
+                                encoder_note = "使用CPU編碼（NVENC不可用）"
                             else:
                                 raise
                     else:
-                        state.message = "正在使用预分割片段并行导出音频"
+                        state.message = "正在使用預分割片段並行導出音頻"
                         delete_time_ranges = [(item["start"], item["end"]) for item in delete_ranges]
                         export_with_segments(
                             segments, delete_time_ranges, output_media,
@@ -694,8 +726,8 @@ class TaskManager:
             
             if not can_use_presplit:
                 LOGGER.info(">>> USING TRADITIONAL EXPORT <<<")
-                # 由于uploads已经在虚拟硬盘上，不需要再stage
-                state.message = "正在剪辑音频" if (not has_video and has_audio) else "正在剪辑视频"
+                # 由於uploads已經在虛擬硬碟上，不需要再stage
+                state.message = "正在剪輯音頻" if (not has_video and has_audio) else "正在剪輯視頻"
                 encoder_note = cut_video(
                     input_path, output_media, keep_list,
                     reencode=reencode, snap_zero_cross=snap_zero_cross, xfade_ms=xfade_ms,
@@ -729,7 +761,7 @@ class TaskManager:
             state.progress = 1.0
             state.status = "completed"
             state.result = outputs
-            state.message = "剪辑完成"
+            state.message = "剪輯完成"
             LOGGER.info("task %s cut completed -> %s", state.id, output_media)
         except Exception as exc:
             state.status = "failed"

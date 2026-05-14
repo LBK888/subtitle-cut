@@ -1,6 +1,13 @@
+@font-face {
+  font-family: 'Iansui';
+  src: url('Iansui-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
 :root {
   color-scheme: dark;
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "Iansui", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --bg: #0f111a;
   --surface: #161926;
   --surface-elevated: #1f2332;
@@ -94,9 +101,9 @@ button:disabled {
   display: flex;
   flex-direction: row;
   width: 100%;
-  height: 700px;
-  max-height: 700px;
-  min-height: 700px;
+  height: 750px;
+  max-height: 1000px;
+  min-height: 750px;
   overflow: hidden;
   background: var(--bg);
 }
@@ -110,12 +117,12 @@ button:disabled {
   overflow: hidden;
 }
 
-.app-main > .workspace-layout {
+.app-main>.workspace-layout {
   flex: 1;
   overflow: auto;
 }
 
-.app-main > .timeline-row {
+.app-main>.timeline-row {
   flex-shrink: 0;
 }
 
@@ -132,7 +139,7 @@ button:disabled {
   align-items: center;
 }
 
-.app-sidebar > * {
+.app-sidebar>* {
   width: 100%;
 }
 
@@ -994,6 +1001,7 @@ button:disabled {
   border-color: var(--accent);
   color: var(--accent);
 }
+
 .punctuation.selected {
   background: var(--accent-soft);
   border-color: var(--accent);
@@ -1005,11 +1013,13 @@ button:disabled {
   border-color: var(--accent);
   color: var(--accent);
 }
+
 .punctuation.marked {
   background: rgba(47, 128, 237, 0.24);
   border-color: var(--accent);
   color: var(--accent);
 }
+
 .silence-placeholder.marked {
   background: rgba(47, 128, 237, 0.24);
   border-color: var(--accent);
@@ -1021,6 +1031,7 @@ button:disabled {
     background: rgba(47, 128, 237, 0.38);
     border-color: var(--accent);
   }
+
   100% {
     background: rgba(47, 128, 237, 0.08);
     border-color: transparent;
@@ -1204,6 +1215,7 @@ button:disabled {
   border-color: var(--accent);
   color: var(--accent);
 }
+
 .punctuation.selected {
   background: var(--accent-soft);
   border-color: var(--accent);
@@ -1215,6 +1227,7 @@ button:disabled {
   border-color: var(--accent);
   color: var(--accent);
 }
+
 .punctuation.marked {
   background: rgba(47, 128, 237, 0.24);
   border-color: var(--accent);
@@ -1328,6 +1341,7 @@ button:disabled {
   padding: 0 16px;
   height: 34px;
 }
+
 .manuscript-actions .action-compact {
   min-width: 110px;
 }
@@ -1493,7 +1507,7 @@ button:disabled {
   min-width: 100%;
 }
 
-.app-sidebar .operation-strip__group + .operation-strip__group {
+.app-sidebar .operation-strip__group+.operation-strip__group {
   margin-left: 0;
 }
 
@@ -1687,7 +1701,7 @@ button:disabled {
   .options-panel {
     width: 420px;
   }
-  
+
   .options-panel__body form {
     grid-template-columns: 1fr;
   }
@@ -1887,7 +1901,7 @@ button:disabled {
   color: var(--muted);
 }
 
-.operation-strip__group + .operation-strip__group {
+.operation-strip__group+.operation-strip__group {
   margin-left: 24px;
 }
 

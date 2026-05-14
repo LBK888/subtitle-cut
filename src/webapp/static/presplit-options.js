@@ -1,4 +1,4 @@
-// 预分割选项交互逻辑
+// 預分割選項交互邏輯
 (function() {
   const presplitModeSelect = document.querySelector('#import-presplit-mode');
   const presplitSegmentsField = document.querySelector('#presplit-segments-field');
